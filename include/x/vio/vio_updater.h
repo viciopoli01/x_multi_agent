@@ -30,7 +30,6 @@
 #include "x/vio/tools.h"
 #include "x/vio/track_manager.h"
 #include "x/vio/types.h"
-#include "x/tracker/tracker.h"
 
 #ifdef MULTI_UAV
 #include "x/place_recognition/place_recognition.h"
