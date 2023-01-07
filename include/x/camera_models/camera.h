@@ -12,7 +12,7 @@
 #include "x/camera_models/camera_none.h"
 
 namespace x::Camera {
-    static std::shared_ptr<CameraModel> constructCamera(const Params &params) {
+    std::shared_ptr<CameraModel> constructCamera(const Params &params) {
         // Initialize camera geometry
         if (params.cameraType == Camera::DistortionModel::RADTAN) {
             return std::make_shared<CameraRadTan>(params);

@@ -28,16 +28,16 @@
 #include "x/camera_models/camera.h"
 #include "x/vision/types.h"
 
-#ifdef MULTI_UAV
-#include "x/place_recognition/place_recognition.h"
-#endif
-
 #ifdef PHOTOMETRIC_CALI
+
 #include <boost/thread.hpp>
 
 #include "x/photometric_calibration/irPhotoCalib.h"
+
 #endif
 
+#ifdef MULTI_UAV
+#endif
 namespace x {
     class Tracker {
     public:
@@ -60,7 +60,6 @@ namespace x {
          * @param win_size_h
          * @param max_level
          * @param min_eig_thr
-         * @param place_recognition
          * @param temporal_params_div
          * @param spatial_params
          * @param spatial_params_thr
@@ -77,10 +76,6 @@ namespace x {
                 unsigned int n_feat_min, int outlier_method, double outlier_param1,
                 double outlier_param2, int win_size_w, int win_size_h, int max_level,
                 double min_eig_thr
-#ifdef MULTI_UAV
-                ,
-                std::shared_ptr<PlaceRecognition> &place_recognition
-#endif
 #ifdef PHOTOMETRIC_CALI
                 ,
                 int temporal_params_div = 0, bool spatial_params = false,
@@ -88,6 +83,10 @@ namespace x {
                 double epsilon_base = 0.4, int max_level_photo = 2,
                 double min_eig_thr_photo = 0.003, int win_size_w_photo = 31,
                 int win_size_h_photo = 31, int fast_detection_delta_photo = 30
+#endif
+#ifdef MULTI_UAV
+                , const float scale_factor = 0.0, const int patch_size = 0,
+                const int pyramid_levels = 0
 #endif
         );
 
@@ -125,11 +124,15 @@ namespace x {
                        int win_size_h, int max_level, double min_eig_thr
 #ifdef PHOTOMETRIC_CALI
                 ,
-                int temporal_params_div = 0, bool spatial_params = false,
-                double spatial_params_thr = 0.0, double epsilon_gap = 0.5,
-                double epsilon_base = 0.4, int max_level_photo = 2,
-                double min_eig_thr_photo = 0.003, int win_size_w_photo = 31,
-                int win_size_h_photo = 31, int fast_detection_delta_photo = 30
+                       int temporal_params_div = 0, bool spatial_params = false,
+                       double spatial_params_thr = 0.0, double epsilon_gap = 0.5,
+                       double epsilon_base = 0.4, int max_level_photo = 2,
+                       double min_eig_thr_photo = 0.003, int win_size_w_photo = 31,
+                       int win_size_h_photo = 31, int fast_detection_delta_photo = 30
+#endif
+#ifdef MULTI_UAV
+                , const float scale_factor = 0.0, const int patch_size = 0,
+                       const int pyramid_levels = 0
 #endif
         );
 
@@ -173,58 +176,14 @@ namespace x {
         static void plotMatches(MatchList matches, TiledImage &img);
 
 #ifdef PHOTOMETRIC_CALI
+
         /**
          * Apply the photometric calibration to the thermal image
          *
          * @param tracks
          */
         void setIntensistyHistory(const TrackList &tracks);
-#endif
 
-#ifdef MULTI_UAV
-        /**
-         * Add keyframe to the database
-         *
-         * @param keyframe
-         */
-        void addKeyframe(const KeyframePtr &keyframe);
-
-        /**
-         * Clean SLAM matches
-         */
-        void cleanSlamMatches();
-
-        /**
-         * Get MSCK matches reference
-         *
-         * @return MsckfMatches
-         */
-        MsckfMatches &getMsckfMatches();
-
-        /**
-         * Get SLAM matches reference
-         *
-         * @return SlamMatches
-         */
-        SlamMatches &getSlamMatches();
-
-        /**
-         * Upgrade to MSCKF/SLAM or delete opportunistic matches
-         *
-         * @param current_msckf_tracks
-         * @param current_slam_tracks
-         * @param current_opp_tracks
-         */
-        void updateOppMatches(const TrackList &current_msckf_tracks,
-                              const TrackList &current_slam_tracks,
-                              const TrackList &current_opp_tracks);
-
-        /**
-         * Get opportunistic tracks ids
-         *
-         * @return
-         */
-        OppIDListPtr getOppIds();
 #endif
 
     private:
@@ -234,6 +193,10 @@ namespace x {
         cv::Size win_size_ = cv::Size(31, 31);
         cv::TermCriteria term_crit_ = cv::TermCriteria(
                 cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 30, 0.01);
+
+#ifdef MULTI_UAV
+        cv::Ptr<cv::ORB> detector_;
+#endif
 
         MatchList matches_;
         int img_id_ = 0;
@@ -259,11 +222,6 @@ namespace x {
 
         int max_level_ = 2;           // max level KLT pyramid
         double min_eig_thr_ = 0.003;  // minEigThreshold KLT
-
-#ifdef MULTI_UAV
-        // place recognition params
-        std::shared_ptr<PlaceRecognition> place_recognition_;
-#endif
 
         // Placeholder members from an older version to enable multi-scale pyramid
         // detection and tracking
@@ -329,7 +287,7 @@ namespace x {
 #ifdef PHOTOMETRIC_CALI
 
         std::vector<std::vector<float>> tracks_intensity_history_,
-            tracks_intensity_current_;
+                tracks_intensity_current_;
         std::vector<std::vector<std::pair<int, int>>> points_prev_, points_curr_;
         std::vector<int> frame_diff_history_;
 
@@ -353,10 +311,10 @@ namespace x {
         int fast_detection_delta_photo_ = 30;
 
         std::vector<std::vector<std::pair<int, int>>> prev_pixels_history_,
-            current_pixels_current_;
+                current_pixels_current_;
         std::vector<std::pair<int, int>> pair_prev_, pair_curr_;
         std::vector<std::vector<float>> prev_intensity_history_,
-            current_intensity_history_;
+                current_intensity_history_;
 
         std::vector<float> intensities_prev_, intensities_curr_;
 
@@ -375,6 +333,7 @@ namespace x {
         TiledImage prev_img_origin_;
 
         void refinePhotometricParams(const TrackList &tracks);
+
 #endif
     };
 }  // namespace x

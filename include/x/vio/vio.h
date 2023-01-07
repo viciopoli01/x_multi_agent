@@ -33,7 +33,7 @@
 #include "x/vio/vio_updater.h"
 #include "x/camera_models/camera.h"
 #include "x/vision/tiled_image.h"
-#include "x/vision/tracker.h"
+#include "x/tracker/tracker.h"
 
 #ifdef MULTI_UAV
 #include "x/place_recognition/keyframe.h"
@@ -41,238 +41,247 @@
 #endif
 
 namespace x {
-namespace fsm = std::filesystem;
-class VIO {
- public:
-  VIO();
+    namespace fsm = std::filesystem;
 
-  /**
-   * Return if the ekf is initialized
-   *
-   * @return bool
-   */
-  [[nodiscard]] bool isInitialized() const;
+    class VIO {
+    public:
+        VIO();
 
-  /**
-   * Init the ekf with a certain timestamp time
-   *
-   * @param time
-   */
-  void initAtTime(const double &time);
+        /**
+         * Return if the ekf is initialized
+         *
+         * @return bool
+         */
+        [[nodiscard]] bool isInitialized() const;
 
-  /**
-   * Setup VIO parameters
-   *
-   * @param params
-   */
-  void setUp(const Params &params);
+        /**
+         * Init the ekf with a certain timestamp time
+         *
+         * @param time
+         */
+        void initAtTime(const double &time);
 
-  /**
-   * Load new range measurements
-   *
-   * @param range_measurement
-   */
-  void setLastRangeMeasurement(const RangeMeasurement &range_measurement);
+        /**
+         * Setup VIO parameters
+         *
+         * @param params
+         */
+        void setUp(const Params &params);
 
-  /**
-   * Load new sun angle measurements
-   *
-   * @param angle_measurement
-   */
-  void setLastSunAngleMeasurement(const SunAngleMeasurement &angle_measurement);
+        /**
+         * Load new range measurements
+         *
+         * @param range_measurement
+         */
+        void setLastRangeMeasurement(const RangeMeasurement &range_measurement);
 
-  /**
-   * Pass IMU measurements to EKF for propagation.
-   *
-   * @param[in] timestamp
-   * @param[in] msg_seq Message ID.
-   * @param[in] w_m Angular velocity (gyroscope).
-   * @param[in] a_m Specific force (accelerometer).
-   * @return The propagated state.
-   */
-  std::optional<State> processImu(const double &timestamp, unsigned int seq,
-                                  const Vector3 &w_m, const Vector3 &a_m);
+        /**
+         * Load new sun angle measurements
+         *
+         * @param angle_measurement
+         */
+        void setLastSunAngleMeasurement(const SunAngleMeasurement &angle_measurement);
 
-  /**
-   * Creates an update measurement from image and pass it to EKF.
-   *
-   * @param[in] timestamp Image timestamp.
-   * @param[in] seq Image sequence ID.
-   * @param[in,out] match_img Image input, overwritten as tracker debug image
-   *                          in output.
-   * @param[out] feature_img Track manager image output.
-   * @return The updated state, or invalide if the update could not happen.
-   */
-  std::optional<State> processImageMeasurement(const double &timestamp,
-                                               unsigned int seq,
-                                               TiledImage &match_img,
-                                               TiledImage &feature_img);
+        /**
+         * Pass IMU measurements to EKF for propagation.
+         *
+         * @param[in] timestamp
+         * @param[in] msg_seq Message ID.
+         * @param[in] w_m Angular velocity (gyroscope).
+         * @param[in] a_m Specific force (accelerometer).
+         * @return The propagated state.
+         */
+        std::optional<State> processImu(const double &timestamp, unsigned int seq,
+                                        const Vector3 &w_m, const Vector3 &a_m);
 
-  /**
-   * Creates an update measurement from visual matches and pass it to EKF.
-   *
-   * @param[in] timestamp Image timestamp.
-   * @param[in] seq Image sequence ID.
-   * @param[in,out] match_vector Feature matches vector.
-   * @param[out] match_img Tracker image output.
-   * @param[out] feature_img Track manager image output.
-   * @return The updated state, or invalid if the update could not happen.
-   */
-  std::optional<State> processMatchesMeasurement(
-      const double &timestamp, unsigned int seq,
-      const std::vector<double> &match_vector, TiledImage &match_img,
-      TiledImage &feature_img);
+        /**
+         * Creates an update measurement from image and pass it to EKF.
+         *
+         * @param[in] timestamp Image timestamp.
+         * @param[in] seq Image sequence ID.
+         * @param[in,out] match_img Image input, overwritten as tracker debug image
+         *                          in output.
+         * @param[out] feature_img Track manager image output.
+         * @return The updated state, or invalide if the update could not happen.
+         */
+        [[deprecated("Use the processTracks instead with the external tracking module")]] std::optional<State>
+        processImageMeasurement(const double &timestamp,
+                                unsigned int seq,
+                                TiledImage &match_img,
+                                TiledImage &feature_img);
 
-  /**
-   * Compute cartesian coordinates of SLAM features for input state.
-   *
-   * @param[in] state Input state.
-   * @return A vector with the 3D cartesian coordinates.
-   */
-  std::vector<Vector3> computeSLAMCartesianFeaturesForState(const State &state);
 
-  /**
-   * Get MSCKF inliers and outliers
-   *
-   * @param inliers
-   * @param outliers
-   */
-  void getMsckfFeatures(Vector3dArray &inliers, Vector3dArray &outliers);
+        std::optional<State> processTracks(const double &timestamp,
+                                           const unsigned int seq, const MatchList &matches,
+                                           TiledImage &match_img,
+                                           TiledImage &feature_img);
 
-  /**
-   * Load parameters from a yaml file into a Params struct
-   *
-   * @param path, path to the yaml file
-   * @return Params
-   */
-  Params loadParamsFromYaml(fsm::path &path);
+        /**
+         * Creates an update measurement from visual matches and pass it to EKF.
+         *
+         * @param[in] timestamp Image timestamp.
+         * @param[in] seq Image sequence ID.
+         * @param[in,out] match_vector Feature matches vector.
+         * @param[out] match_img Tracker image output.
+         * @param[out] feature_img Track manager image output.
+         * @return The updated state, or invalid if the update could not happen.
+         */
+        std::optional<State> processMatchesMeasurement(
+                const double &timestamp, unsigned int seq,
+                const std::vector<double> &match_vector, TiledImage &match_img,
+                TiledImage &feature_img);
+
+        /**
+         * Compute cartesian coordinates of SLAM features for input state.
+         *
+         * @param[in] state Input state.
+         * @return A vector with the 3D cartesian coordinates.
+         */
+        std::vector<Vector3> computeSLAMCartesianFeaturesForState(const State &state);
+
+        /**
+         * Get MSCKF inliers and outliers
+         *
+         * @param inliers
+         * @param outliers
+         */
+        void getMsckfFeatures(Vector3dArray &inliers, Vector3dArray &outliers);
+
+        /**
+         * Load parameters from a yaml file into a Params struct
+         *
+         * @param path, path to the yaml file
+         * @return Params
+         */
+        Params loadParamsFromYaml(fsm::path &path);
+
 #ifdef MULTI_UAV
 
 #ifndef REQUEST_COMM
 
-  /**
-   * @brief get the the data that need to be sent to the other UAVs
-   *
-   * @param[out] msckf_tracks
-   * @param[out] slam_tracks
-   * @param[out] anchor_idxs
-   * @param[out] n_poses_max
-   * @param[out] opp_tracks
-   */
-  void getDataToSend(std::shared_ptr<SimpleState> &state_ptr,
-                     const State &state, TrackList &msckf_tracks,
-                     TrackList &slam_tracks, std::vector<int> &anchor_idxs,
-                     TrackList &opp_tracks);
+        /**
+         * @brief get the the data that need to be sent to the other UAVs
+         *
+         * @param[out] msckf_tracks
+         * @param[out] slam_tracks
+         * @param[out] anchor_idxs
+         * @param[out] n_poses_max
+         * @param[out] opp_tracks
+         */
+        void getDataToSend(std::shared_ptr<SimpleState> &state_ptr,
+                           const State &state, TrackList &msckf_tracks,
+                           TrackList &slam_tracks, std::vector<int> &anchor_idxs,
+                           TrackList &opp_tracks);
 
 #endif
 
-  /**
-   * @brief check whether the current UAV knows about places the other UAV is
-   * visiting.
-   *
-   * @param[in] uav_id
-   * @param[in] descriptors
-   * @param[out] state
-   * @param[out] msckf_tracks
-   * @param[out] slam_tracks
-   * @param[out] anchor_idxs
-   * @param[out] opp_features
-   */
-  void processOtherRequests(int uav_id, cv::Mat &descriptors,
-                            std::shared_ptr<SimpleState> &state,
-                            TrackList &msckf_tracks, TrackList &slam_tracks,
-                            std::vector<int> &anchor_idxs,
-                            TrackList &opp_tracks);
+        /**
+         * @brief check whether the current UAV knows about places the other UAV is
+         * visiting.
+         *
+         * @param[in] uav_id
+         * @param[in] descriptors
+         * @param[out] state
+         * @param[out] msckf_tracks
+         * @param[out] slam_tracks
+         * @param[out] anchor_idxs
+         * @param[out] opp_features
+         */
+        void processOtherRequests(int uav_id, cv::Mat &descriptors,
+                                  std::shared_ptr<SimpleState> &state,
+                                  TrackList &msckf_tracks, TrackList &slam_tracks,
+                                  std::vector<int> &anchor_idxs,
+                                  TrackList &opp_tracks);
 
-  /**
-   * Get last frame descriptors
-   *
-   * @return cv::Mat containing descriptors
-   */
-  cv::Mat getDescriptors();
+        /**
+         * Get last frame descriptors
+         *
+         * @return cv::Mat containing descriptors
+         */
+        cv::Mat getDescriptors();
 
-  /**
-   * @brief Process the data received by the other UAVs
-   *
-   * @param[in] uav_id id of the sender
-   * @param[in] dynamic_state
-   * @param[in] positions_state
-   * @param[in] orientations_state
-   * @param[in] features_state
-   * @param[in] cov
-   * @param[in] received_msckf_trcks
-   * @param[in] received_slam_trcks
-   * @param[in] received_opp_tracks
-   * @param[in] anchor_idxs
-   * @param[in,out] dst image for showing the features correspondences
-   */
-  std::optional<State> processOtherMeasurements(
-      double timestamp, int uav_id, const Vectorx &dynamic_state,
-      const Vectorx &positions_state, const Vectorx &orientations_state,
-      const Vectorx &features_state, const Matrix &cov,
-      const TrackListPtr &received_msckf_trcks_ptr,
-      const TrackListPtr &received_slam_trcks_ptr,
-      const TrackListPtr &received_opp_tracks_ptr,
-      const std::vector<int> &anchor_idxs, cv::Mat &dst);
+        /**
+         * @brief Process the data received by the other UAVs
+         *
+         * @param[in] uav_id id of the sender
+         * @param[in] dynamic_state
+         * @param[in] positions_state
+         * @param[in] orientations_state
+         * @param[in] features_state
+         * @param[in] cov
+         * @param[in] received_msckf_trcks
+         * @param[in] received_slam_trcks
+         * @param[in] received_opp_tracks
+         * @param[in] anchor_idxs
+         * @param[in,out] dst image for showing the features correspondences
+         */
+        std::optional<State> processOtherMeasurements(
+            double timestamp, int uav_id, const Vectorx &dynamic_state,
+            const Vectorx &positions_state, const Vectorx &orientations_state,
+            const Vectorx &features_state, const Matrix &cov,
+            const TrackListPtr &received_msckf_trcks_ptr,
+            const TrackListPtr &received_slam_trcks_ptr,
+            const TrackListPtr &received_opp_tracks_ptr,
+            const std::vector<int> &anchor_idxs, cv::Mat &dst);
 
 #endif
 
- private:
-  /**
-   * Extended Kalman filter estimation back end.
-   */
-  Ekf ekf_;
+    private:
+        /**
+         * Extended Kalman filter estimation back end.
+         */
+        Ekf ekf_;
 
-  /**
-   * VIO EKF updater.
-   *
-   * Constructs and applies an EKF update from a VIO measurement. The EKF
-   * class owns a reference to this object through Updater abstract class,
-   * which it calls to apply the update.
-   */
-  VioUpdater vio_updater_;
+        /**
+         * VIO EKF updater.
+         *
+         * Constructs and applies an EKF update from a VIO measurement. The EKF
+         * class owns a reference to this object through Updater abstract class,
+         * which it calls to apply the update.
+         */
+        VioUpdater vio_updater_;
 
-  Params params_;
+        Params params_;
 
-  /**
-   * Minimum baseline for MSCKF (in normalized plane).
-   */
-  double msckf_baseline_x_n_, msckf_baseline_y_n_;
+        /**
+         * Minimum baseline for MSCKF (in normalized plane).
+         */
+        double msckf_baseline_x_n_, msckf_baseline_y_n_;
 
-  std::shared_ptr<CameraModel> camera_;
-  Tracker tracker_;
-  TrackManager track_manager_;
-  StateManager state_manager_;
-  RangeMeasurement last_range_measurement_;
-  SunAngleMeasurement last_angle_measurement_;
-  bool initialized_{false};
+        std::shared_ptr<CameraModel> camera_;
+        Tracker tracker_;
+        TrackManager track_manager_;
+        StateManager state_manager_;
+        RangeMeasurement last_range_measurement_;
+        SunAngleMeasurement last_angle_measurement_;
+        bool initialized_{false};
 
-  /**
-   * Import a feature match list from a std::vector.
-   *
-   * @param[in] match_vector Input vector of matches.
-   * @param[in] seq Image sequence ID.
-   * @param[out] img_plot Debug image.
-   * @return The list of matches.
-   */
-  MatchList importMatches(const std::vector<double> &match_vector,
-                          unsigned int seq, x::TiledImage &img_plot) const;
+        /**
+         * Import a feature match list from a std::vector.
+         *
+         * @param[in] match_vector Input vector of matches.
+         * @param[in] seq Image sequence ID.
+         * @param[out] img_plot Debug image.
+         * @return The list of matches.
+         */
+        MatchList importMatches(const std::vector<double> &match_vector,
+                                unsigned int seq, x::TiledImage &img_plot) const;
 
-  std::vector<Vector3> imu_data_batch_{};
-  bool initialize_start_{false};
-  bool self_init_start_{false};
+        std::vector<Vector3> imu_data_batch_{};
+        bool initialize_start_{false};
+        bool self_init_start_{false};
 
 #ifdef MULTI_THREAD
-  TiledImage matches_img_;  // current UAV image to store the matches
+        TiledImage matches_img_;  // current UAV image to store the matches
 
-  std::mutex mtx_;
+        std::mutex mtx_;
 #endif
 #ifdef MULTI_UAV
-  Keyframe candidate_keyframe_;
-  std::shared_ptr<PlaceRecognition>
-      place_recognition_;  // this can be nullptr when MULTI_UAV is off
+        Keyframe candidate_keyframe_;
+        std::shared_ptr<PlaceRecognition>
+            place_recognition_;  // this can be nullptr when MULTI_UAV is off
 #endif
-};
+    };
 }  // namespace x
 
 #endif

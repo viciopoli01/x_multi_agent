@@ -31,13 +31,15 @@ option(TIMING "Publish timing information" OFF)
 option(PROFILING "Enable profiling flags" OFF)
 
 # Set to ON to enable photometric calibration as in https://arxiv.org/abs/2012.14292
-option(PHOTOMETRIC_CALI "Enable photometric calibration for thermal images" OFF)
+option(PHOTOMETRIC_CALI "Enable photometric calibration for thermal images" ON)
 
 # Set to ON to enable Multi UAV system
-option(MULTI_UAV "Enable multi-UAV collaboration" OFF)
-
+option(MULTI_UAV "Enable multi-UAV collaboration" ON)
+add_definitions(-DMULTI_UAV)
+add_definitions(-DREQUEST_COMM)
+add_definitions(-DPHOTOMETRIC_CALI)
 # Set to ON if you want to enable the request protocol for the communication
-option(REQUEST_COMM "Enable request-response communication pipeline" OFF)
+option(REQUEST_COMM "Enable request-response communication pipeline" ON)
 
 # Set to ON for using the ground truth matches for multi UAV
 option(GT_DEBUG "Expect landmarks position ground truth as input" OFF)
@@ -234,7 +236,7 @@ set(SOURCE
         src/x/vio/solar_update.cpp
         src/x/vision/feature.cpp
         src/x/vision/tiled_image.cpp
-        src/x/vision/tracker.cpp
+        src/x/tracker/tracker.cpp
         src/x/vision/track.cpp
         src/x/vision/triangulation.cpp
         )

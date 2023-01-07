@@ -30,7 +30,7 @@
 #include "x/place_recognition/database.h"
 #include "x/place_recognition/keyframe.h"
 #include "x/place_recognition/types.h"
-#include "x/vision/camera.h"
+#include "x/camera_models/camera.h"
 #include "x/vision/types.h"
 
 namespace x {
@@ -53,9 +53,7 @@ class PlaceRecognition {
    * @param pr_min_distance
    * @param pr_ratio_thr
    */
-  PlaceRecognition(Camera cam, int patch_size, float scale_factor,
-                   int pyramid_levels, const fsm::path &vocabulary_path,
-                   int fast_thr, int desc_type, double pr_score_thr,
+  PlaceRecognition(std::shared_ptr<CameraModel> cam, const fsm::path &vocabulary_path, double pr_score_thr,
                    double pr_min_distance, double pr_ratio_thr);
 
   /**
@@ -113,8 +111,7 @@ class PlaceRecognition {
   cv::Mat getDescriptors();
 
  private:
-  Camera camera_;
-  cv::Ptr<cv::ORB> detector_;
+  std::shared_ptr<CameraModel> camera_;
   // cv::Ptr<cv::FeatureDetector> feature_detector_;
   // cv::Ptr<cv::DescriptorExtractor> descriptor_extractor_;
   cv::Ptr<cv::DescriptorMatcher> matcher_;

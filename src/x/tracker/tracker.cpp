@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "x/vision/tracker.h"
+#include "x/tracker/tracker.h"
 
 #include <boost/log/trivial.hpp>
 #include <cmath>
@@ -35,18 +35,18 @@ Tracker::Tracker(const std::shared_ptr<CameraModel> cam, const int fast_detectio
                  int outlier_method, double outlier_param1,
                  double outlier_param2, int win_size_w, int win_size_h,
                  int max_level, double min_eig_thr
-#ifdef MULTI_UAV
-        ,
-        std::shared_ptr<PlaceRecognition> &place_recognition
-#endif
 #ifdef PHOTOMETRIC_CALI
         ,
-        const int temporal_params_div, const bool spatial_params,
-        const double spatial_params_thr, const double epsilon_gap,
-        const double epsilon_base, const int max_level_photo,
-        const double min_eig_thr_photo, const int win_size_w_photo,
-        const int win_size_h_photo,
-        const int fast_detection_delta_photo
+                 const int temporal_params_div, const bool spatial_params,
+                 const double spatial_params_thr, const double epsilon_gap,
+                 const double epsilon_base, const int max_level_photo,
+                 const double min_eig_thr_photo, const int win_size_w_photo,
+                 const int win_size_h_photo,
+                 const int fast_detection_delta_photo
+#endif
+#ifdef MULTI_UAV
+        , const float scale_factor, const int patch_size,
+                 const int pyramid_levels
 #endif
 )
         : win_size_(cv::Size(win_size_w, win_size_h)),
@@ -61,29 +61,31 @@ Tracker::Tracker(const std::shared_ptr<CameraModel> cam, const int fast_detectio
           outlier_param2_(outlier_param2),
           max_level_(max_level),
           min_eig_thr_(min_eig_thr)
-#ifdef MULTI_UAV
-,
-place_recognition_(place_recognition)
-#endif
 #ifdef PHOTOMETRIC_CALI
-,
-temporal_params_div_(temporal_params_div),
-spatial_params_(spatial_params),
-spatial_params_thr_(spatial_params_thr),
-epsilon_gap_(epsilon_gap),
-epsilon_base_(epsilon_base),
-max_level_photo_(max_level_photo),
-min_eig_thr_photo_(min_eig_thr_photo),
-win_size_photo_(cv::Size(win_size_w_photo, win_size_h_photo)),
-fast_detection_delta_photo_(fast_detection_delta_photo)
+        ,
+          temporal_params_div_(temporal_params_div),
+          spatial_params_(spatial_params),
+          spatial_params_thr_(spatial_params_thr),
+          epsilon_gap_(epsilon_gap),
+          epsilon_base_(epsilon_base),
+          max_level_photo_(max_level_photo),
+          min_eig_thr_photo_(min_eig_thr_photo),
+          win_size_photo_(cv::Size(win_size_w_photo, win_size_h_photo)),
+          fast_detection_delta_photo_(fast_detection_delta_photo)
 #endif
 {
 #ifdef PHOTOMETRIC_CALI
     calibrator_ = std::make_shared<IRPhotoCalib>(
-        camera_.getWidth(), camera_.getHeight(), temporal_params_div_,
-        spatial_params_, spatial_params_thr_, epsilon_gap_, epsilon_base_, false);
+            camera_->getWidth(), camera_->getHeight(), temporal_params_div_,
+            spatial_params_, spatial_params_thr_, epsilon_gap_, epsilon_base_, false);
 #endif
     img_pyramid_.reserve(pyramid_depth_);  // prealloc memory for pyramid vector
+
+#ifdef MULTI_UAV
+    detector_ = cv::ORB::create(2 * n_feat_min_, scale_factor, pyramid_levels, margin_, 0, 2,
+                                cv::ORB::FAST_SCORE, patch_size, fast_detection_delta_);
+
+#endif
 }
 
 void Tracker::setParams(
@@ -99,6 +101,10 @@ void Tracker::setParams(
         double epsilon_gap, double epsilon_base, int max_level_photo,
         double min_eig_thr_photo, int win_size_w_photo, int win_size_h_photo,
         int fast_detection_delta_photo
+#endif
+#ifdef MULTI_UAV
+        , const float scale_factor, const int patch_size,
+        const int pyramid_levels
 #endif
 ) {
     camera_ = cam;
@@ -124,6 +130,12 @@ void Tracker::setParams(
     min_eig_thr_photo_ = min_eig_thr_photo;
     win_size_photo_ = cv::Size(win_size_w_photo, win_size_h_photo);
     fast_detection_delta_photo_ = fast_detection_delta_photo;
+#endif
+
+#ifdef MULTI_UAV
+    detector_ = cv::ORB::create(2 * n_feat_min_, scale_factor, pyramid_levels, margin_, 0, 2,
+                                cv::ORB::FAST_SCORE, patch_size, fast_detection_delta_);
+
 #endif
 }
 
@@ -439,8 +451,26 @@ void Tracker::getFASTFeaturesImage(TiledImage &img, const double &timestamp,
 #ifdef MULTI_UAV
     cv::FAST(img, keypoints, fast_detection_delta_, non_max_supp_);
     Descriptors descriptors;
-    place_recognition_->compute(img, keypoints, descriptors,
-                                fast_detection_delta_);
+
+#ifdef PHOTOMETRIC_CALI
+    if (detector_->getFastThreshold() != fast_detection_delta_) {
+        detector_->setFastThreshold(static_cast<int>(fast_detection_delta_));
+    }
+#endif
+/**
+     * READ HERE :
+     * https://stackoverflow.com/questions/61957611/missing-keypoints-from-image
+     *
+     * From OpenCV documentation:
+     * keypoints – Input collection of keypoints. Keypoints for which a descriptor
+     * cannot be computed are removed. Sometimes new keypoints can be added, for
+     * example: SIFT duplicates keypoint with several dominant orientations (for
+     * each orientation).
+     *
+     */
+
+    detector_->compute(img, keypoints, descriptors);
+    assert(keypoints.size() == descriptors.rows);
 #else
     // Get FAST features
     cv::Mat descriptors;
@@ -638,16 +668,16 @@ void Tracker::featureTracking(const cv::Mat &img1, const cv::Mat &img2,
     if (!pts1.empty()) {
 #ifdef PHOTOMETRIC_CALI
         if (CALIBRATION_DONE) {
-          cv::calcOpticalFlowPyrLK(img1, img2, pts1, pts2, status, err,
-                                   win_size_photo_, max_level_photo_, term_crit_,
-                                   cv::OPTFLOW_LK_GET_MIN_EIGENVALS,
-                                   min_eig_thr_photo_);  // 0.001
+            cv::calcOpticalFlowPyrLK(img1, img2, pts1, pts2, status, err,
+                                     win_size_photo_, max_level_photo_, term_crit_,
+                                     cv::OPTFLOW_LK_GET_MIN_EIGENVALS,
+                                     min_eig_thr_photo_);  // 0.001
         } else {
 #endif
-        cv::calcOpticalFlowPyrLK(img1, img2, pts1, pts2, status, err, win_size_,
-                                 max_level_, term_crit_,
-                                 cv::OPTFLOW_LK_GET_MIN_EIGENVALS,
-                                 min_eig_thr_);  // 0.001
+            cv::calcOpticalFlowPyrLK(img1, img2, pts1, pts2, status, err, win_size_,
+                                     max_level_, term_crit_,
+                                     cv::OPTFLOW_LK_GET_MIN_EIGENVALS,
+                                     min_eig_thr_);  // 0.001
 
 #ifdef PHOTOMETRIC_CALI
         }
@@ -694,217 +724,186 @@ void Tracker::featureTracking(const cv::Mat &img1, const cv::Mat &img2,
  */
 
 #ifdef PHOTOMETRIC_CALI
+
 void Tracker::refinePhotometricParams(const TrackList &tracks) {
-  if (tracks.empty()) {
-    return;
-  }
-  tracks_intensity_history_.clear();
-  tracks_intensity_current_.clear();
-  frame_diff_history_.clear();
-  points_prev_.clear();
-  points_curr_.clear();
-  int tracks_counter =
-      static_cast<int>(tracks.size());  // count the n of tracks
-  int f = 1;                            // starting from the second last frame
+    if (tracks.empty()) {
+        return;
+    }
+    tracks_intensity_history_.clear();
+    tracks_intensity_current_.clear();
+    frame_diff_history_.clear();
+    points_prev_.clear();
+    points_curr_.clear();
+    int tracks_counter =
+            static_cast<int>(tracks.size());  // count the n of tracks
+    int f = 1;                            // starting from the second last frame
 
-  while (tracks_counter > 4) {  // required for RANSAC gain in photometric calib
-    Intensities intensities_frame_f, intensities_current_f;
-    std::vector<std::pair<int, int>> prev_point_frame_f, curr_point_curr_f;
-    for (const Track &t : tracks) {
-      if (static_cast<int>(t.size()) - 1 < f) {
-        tracks_counter--;  // decrease the n of tracks
-        continue;          // means that the track is not long enought
-      }
+    while (tracks_counter > 4) {  // required for RANSAC gain in photometric calib
+        Intensities intensities_frame_f, intensities_current_f;
+        std::vector<std::pair<int, int>> prev_point_frame_f, curr_point_curr_f;
+        for (const Track &t: tracks) {
+            if (static_cast<int>(t.size()) - 1 < f) {
+                tracks_counter--;  // decrease the n of tracks
+                continue;          // means that the track is not long enought
+            }
 
-      intensities_frame_f.emplace_back(
-          t.at(t.size() - 1 - f)  // t.size()-1 is t.back()
-              .getIntensity());   // starting from the back (namely the newest)
+            intensities_frame_f.emplace_back(
+                    t.at(t.size() - 1 - f)  // t.size()-1 is t.back()
+                            .getIntensity());   // starting from the back (namely the newest)
 
-      // the intensities match that the current frame has with the frame f
-      intensities_current_f.emplace_back(
-          t.back().getIntensity());  // this is the current frame
-      prev_point_frame_f.emplace_back(
-          std::pair<int, int>(t.at(t.size() - 1 - f).getXDist(),
-                              t.at(t.size() - 1 - f).getYDist()));
-      curr_point_curr_f.emplace_back(
-          std::pair<int, int>(static_cast<int>(t.back().getXDist()),
-                              static_cast<int>(t.back().getYDist())));
+            // the intensities match that the current frame has with the frame f
+            intensities_current_f.emplace_back(
+                    t.back().getIntensity());  // this is the current frame
+            prev_point_frame_f.emplace_back(
+                    std::pair<int, int>(t.at(t.size() - 1 - f).getXDist(),
+                                        t.at(t.size() - 1 - f).getYDist()));
+            curr_point_curr_f.emplace_back(
+                    std::pair<int, int>(static_cast<int>(t.back().getXDist()),
+                                        static_cast<int>(t.back().getYDist())));
+        }
+
+        if (intensities_frame_f.empty()) {
+            continue;
+        }
+
+        points_prev_.push_back(prev_point_frame_f);
+        points_curr_.push_back(curr_point_curr_f);
+        tracks_intensity_history_.push_back(intensities_frame_f);
+        tracks_intensity_current_.push_back(intensities_current_f);
+
+        frame_diff_history_.push_back(f);
+        f++;
     }
 
-    if (intensities_frame_f.empty()) {
-      continue;
+    calibrator_->ProcessCurrentFrame(
+            tracks_intensity_history_, tracks_intensity_current_, frame_diff_history_,
+            points_prev_, points_curr_, false);
+    if (!CALIBRATION_DONE) {
+        CALIBRATION_DONE = calibrator_->isReady();
     }
-
-    points_prev_.push_back(prev_point_frame_f);
-    points_curr_.push_back(curr_point_curr_f);
-    tracks_intensity_history_.push_back(intensities_frame_f);
-    tracks_intensity_current_.push_back(intensities_current_f);
-
-    frame_diff_history_.push_back(f);
-    f++;
-  }
-
-  calibrator_->ProcessCurrentFrame(
-      tracks_intensity_history_, tracks_intensity_current_, frame_diff_history_,
-      points_prev_, points_curr_, false);
-  if (!CALIBRATION_DONE) {
-    CALIBRATION_DONE = calibrator_->isReady();
-  }
 }
 
 void Tracker::setIntensistyHistory(const TrackList &tracks) {
-  boost::thread t(&Tracker::refinePhotometricParams, this, tracks);
-  t.detach();
+    boost::thread t(&Tracker::refinePhotometricParams, this, tracks);
+    t.detach();
 }
 
 void Tracker::calibrateImage(TiledImage &img1, TiledImage &img2) {
-  // 4 points neeed for photometric gains estiamtion
-  if (previous_features_.empty() || previous_features_.size() < 4) {
-    if (CALIBRATION_DONE) {
-      calibrator_->getCorrectedImage(img2);
+    // 4 points neeed for photometric gains estiamtion
+    if (previous_features_.empty() || previous_features_.size() < 4) {
+        if (CALIBRATION_DONE) {
+            calibrator_->getCorrectedImage(img2);
+        }
+        return;
     }
-    return;
-  }
-  // preparing points for photometric calibration
-  std::vector<uchar> status;
-  std::vector<float> err;
+    // preparing points for photometric calibration
+    std::vector<uchar> status;
+    std::vector<float> err;
 
-  std::vector<cv::Point2f> pts1, pts2;
-  pts1.reserve(previous_features_.size());
+    std::vector<cv::Point2f> pts1, pts2;
+    pts1.reserve(previous_features_.size());
 #ifdef TIMING
-  // Set up and start internal timing
-  clock_t clock1, clock2, clock3, clock4, clock5;
-  clock1 = clock();
+    // Set up and start internal timing
+    clock_t clock1, clock2, clock3, clock4, clock5;
+    clock1 = clock();
 #endif
-  for (const auto &f : previous_features_) {
-    pts1.emplace_back(f.getDistPoint2f());
-  }
-
-  cv::calcOpticalFlowPyrLK(img1, img2, pts1, pts2, status, err, win_size_,
-                           max_level_, term_crit_,
-                           cv::OPTFLOW_LK_GET_MIN_EIGENVALS,
-                           min_eig_thr_);  // 0.001
-
-#ifdef TIMING
-  clock2 = clock();
-  std::cout << "calcOpticalFlowPyrLK  ======================================= "
-            << (double)(clock2 - clock1) / CLOCKS_PER_SEC * 1000 << " ms\n";
-#endif
-  // 4 points neeed for photometric gains estiamtion
-  if (pts2.empty() || pts2.size() < 4) {
-    if (CALIBRATION_DONE) calibrator_->getCorrectedImage(img2);
-    return;
-  }
-
-  std::vector<float> intensities_prev, intensities_curr;
-  std::vector<std::pair<int, int>> pair_prev, pair_curr;
-
-  for (unsigned int i = 0; i < status.size(); i++) {
-    const cv::Point2f &pt = pts2[i];
-    if (status[i] && pt.x >= -0.5 && pt.y >= -0.5 && pt.x <= img2.cols - 0.5 &&
-        pt.y <= img2.rows - 0.5) {
-      intensities_curr.emplace_back(computeIntensity(
-          img2, static_cast<int>(pt.x), static_cast<int>(pt.y)));
-
-      intensities_prev.emplace_back(previous_features_[i].getIntensity());
-
-      pair_prev.emplace_back(std::pair<int, int>(
-          static_cast<int>(previous_features_[i].getXDist()),
-          static_cast<int>(previous_features_[i].getYDist())));
-
-      pair_curr.emplace_back(
-          std::pair<int, int>(static_cast<int>(pt.x), static_cast<int>(pt.y)));
+    for (const auto &f: previous_features_) {
+        pts1.emplace_back(f.getDistPoint2f());
     }
-  }
+
+    cv::calcOpticalFlowPyrLK(img1, img2, pts1, pts2, status, err, win_size_,
+                             max_level_, term_crit_,
+                             cv::OPTFLOW_LK_GET_MIN_EIGENVALS,
+                             min_eig_thr_);  // 0.001
+
 #ifdef TIMING
-  clock3 = clock();
-  std::cout << "emplace_back  ======================================= "
-            << (double)(clock3 - clock2) / CLOCKS_PER_SEC * 1000 << " ms\n";
+    clock2 = clock();
+    std::cout << "calcOpticalFlowPyrLK  ======================================= "
+              << (double)(clock2 - clock1) / CLOCKS_PER_SEC * 1000 << " ms\n";
 #endif
-  // 4 points neeed for photometric gains estiamtion
-  if (intensities_curr.size() < 4) {
-    if (CALIBRATION_DONE) {
-      calibrator_->getCorrectedImage(img2);
+    // 4 points neeed for photometric gains estiamtion
+    if (pts2.empty() || pts2.size() < 4) {
+        if (CALIBRATION_DONE) calibrator_->getCorrectedImage(img2);
+        return;
     }
-    return;
-  }
-  static const std::vector<int> ind = {1};
-  std::vector<std::vector<float>> i_intensities_prev = {intensities_prev};
-  std::vector<std::vector<float>> i_intensities_curr = {intensities_curr};
-  std::vector<std::vector<std::pair<int, int>>> i_pair_prev = {pair_prev};
-  std::vector<std::vector<std::pair<int, int>>> i_pair_curr = {pair_curr};
 
-  calibrator_->ProcessCurrentFrame(i_intensities_prev, i_intensities_curr, ind,
-                                   i_pair_prev, i_pair_curr);
+    std::vector<float> intensities_prev, intensities_curr;
+    std::vector<std::pair<int, int>> pair_prev, pair_curr;
 
+    for (unsigned int i = 0; i < status.size(); i++) {
+        const cv::Point2f &pt = pts2[i];
+        if (status[i] && pt.x >= -0.5 && pt.y >= -0.5 && pt.x <= img2.cols - 0.5 &&
+            pt.y <= img2.rows - 0.5) {
+            intensities_curr.emplace_back(computeIntensity(
+                    img2, static_cast<int>(pt.x), static_cast<int>(pt.y)));
+
+            intensities_prev.emplace_back(previous_features_[i].getIntensity());
+
+            pair_prev.emplace_back(std::pair<int, int>(
+                    static_cast<int>(previous_features_[i].getXDist()),
+                    static_cast<int>(previous_features_[i].getYDist())));
+
+            pair_curr.emplace_back(
+                    std::pair<int, int>(static_cast<int>(pt.x), static_cast<int>(pt.y)));
+        }
+    }
 #ifdef TIMING
-  clock4 = clock();
-  std::cout << "ProcessCurrentFrame  ======================================= "
-            << (double)(clock4 - clock3) / CLOCKS_PER_SEC * 1000 << " ms\n";
+    clock3 = clock();
+    std::cout << "emplace_back  ======================================= "
+              << (double)(clock3 - clock2) / CLOCKS_PER_SEC * 1000 << " ms\n";
 #endif
-  calibrator_->getCorrectedImage(img2);
+    // 4 points neeed for photometric gains estiamtion
+    if (intensities_curr.size() < 4) {
+        if (CALIBRATION_DONE) {
+            calibrator_->getCorrectedImage(img2);
+        }
+        return;
+    }
+    static const std::vector<int> ind = {1};
+    std::vector<std::vector<float>> i_intensities_prev = {intensities_prev};
+    std::vector<std::vector<float>> i_intensities_curr = {intensities_curr};
+    std::vector<std::vector<std::pair<int, int>>> i_pair_prev = {pair_prev};
+    std::vector<std::vector<std::pair<int, int>>> i_pair_curr = {pair_curr};
 
-  fast_detection_delta_ = fast_detection_delta_photo_;
-  CALIBRATION_DONE = true;
+    calibrator_->ProcessCurrentFrame(i_intensities_prev, i_intensities_curr, ind,
+                                     i_pair_prev, i_pair_curr);
 
 #ifdef TIMING
-  clock5 = clock();
-  std::cout << "end?!  ======================================= "
-            << (double)(clock5 - clock4) / CLOCKS_PER_SEC * 1000 << " ms\n";
-  std::cout << "TOT  ======================================= "
-            << (double)(clock5 - clock1) / CLOCKS_PER_SEC * 1000 << " ms\n";
+    clock4 = clock();
+    std::cout << "ProcessCurrentFrame  ======================================= "
+              << (double)(clock4 - clock3) / CLOCKS_PER_SEC * 1000 << " ms\n";
+#endif
+    calibrator_->getCorrectedImage(img2);
+
+    fast_detection_delta_ = fast_detection_delta_photo_;
+    CALIBRATION_DONE = true;
+
+#ifdef TIMING
+    clock5 = clock();
+    std::cout << "end?!  ======================================= "
+              << (double)(clock5 - clock4) / CLOCKS_PER_SEC * 1000 << " ms\n";
+    std::cout << "TOT  ======================================= "
+              << (double)(clock5 - clock1) / CLOCKS_PER_SEC * 1000 << " ms\n";
 #endif
 }
 
 float Tracker::computeIntensity(const cv::Mat &img, const int x,
                                 const int y) const {
-  int counter = 0, x_win, y_win;
-  float o = 0.f;
-  const auto half_kernel = static_cast<int>(intensities_kernel_size_ / 2.0);
+    int counter = 0, x_win, y_win;
+    float o = 0.f;
+    const auto half_kernel = static_cast<int>(intensities_kernel_size_ / 2.0);
 
-  for (int r = -half_kernel; r < half_kernel; r++) {
-    for (int c = -half_kernel; c < half_kernel; c++) {
-      x_win = x + c;
-      y_win = y + r;
-      if (x_win >= 0 && x_win < img.cols && y_win >= 0 && y_win < img.rows) {
-        o += static_cast<float>(img.at<uchar>(y_win, x_win)) / 255.f;
-        counter++;
-      }
+    for (int r = -half_kernel; r < half_kernel; r++) {
+        for (int c = -half_kernel; c < half_kernel; c++) {
+            x_win = x + c;
+            y_win = y + r;
+            if (x_win >= 0 && x_win < img.cols && y_win >= 0 && y_win < img.rows) {
+                o += static_cast<float>(img.at<uchar>(y_win, x_win)) / 255.f;
+                counter++;
+            }
+        }
     }
-  }
-  return o / static_cast<float>(counter);
+    return o / static_cast<float>(counter);
 }
-
-#endif
-
-/**
- * @brief Multi UAV block
- *
- */
-
-#ifdef MULTI_UAV
-
-MsckfMatches &Tracker::getMsckfMatches() {
-  return place_recognition_->getMsckfMatches();
-}
-
-SlamMatches &Tracker::getSlamMatches() {
-  return place_recognition_->getSlamMatches();
-}
-
-void Tracker::updateOppMatches(const TrackList &current_msckf_tracks,
-                               const TrackList &current_slam_tracks,
-                               const TrackList &current_opp_tracks) {
-  return place_recognition_->updateOppMatches(
-      current_msckf_tracks, current_slam_tracks, current_opp_tracks);
-}
-
-void Tracker::cleanSlamMatches() { place_recognition_->cleanSlamMatches(); }
-
-void Tracker::addKeyframe(const KeyframePtr &keyframe) {
-  place_recognition_->addKeyframe(keyframe);
-}
-
-OppIDListPtr Tracker::getOppIds() { return place_recognition_->getOppIds(); };
 
 #endif

@@ -21,7 +21,6 @@
 #include <x/vio/types.h>
 
 #include <x/ekf/state.h>
-#include <x/vision/tracker.h>
 
 namespace x {
 class StateManager {

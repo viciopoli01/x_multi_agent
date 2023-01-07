@@ -128,12 +128,11 @@ void VIO::setUp(const Params &params) {
 #ifdef MULTI_UAV
     // Set up place recognition module.
     place_recognition_ = std::make_shared<PlaceRecognition>(
-        camera_, params_.descriptor_patch_size, params_.descriptor_scale_factor,
-        params_.descriptor_pyramid, params_.vocabulary_path,
-        params_.fast_detection_delta, params_.desc_type, params_.pr_score_thr,
-        params_.pr_desc_min_distance, params_.pr_desc_ratio_thr);
+            camera_, params_.vocabulary_path, params_.pr_score_thr,
+            params_.pr_desc_min_distance, params_.pr_desc_ratio_thr);
 #endif
 
+    // TODO: remove the tracker for the next updates, when the deprecated functions are removed
     // Set up tracker module
     tracker_ =
             Tracker(camera_, params_.fast_detection_delta, params_.non_max_supp,
@@ -141,10 +140,6 @@ void VIO::setUp(const Params &params) {
                     params_.outlier_method, params_.outlier_param1,
                     params_.outlier_param2, params_.win_size_w, params_.win_size_h,
                     params_.max_level, params_.min_eig_thr
-#ifdef MULTI_UAV
-                    ,
-                    place_recognition_
-#endif
 #ifdef PHOTOMETRIC_CALI
                     ,
                     params_.temporal_params_div, params_.spatial_params,
@@ -152,6 +147,10 @@ void VIO::setUp(const Params &params) {
                     params_.epsilon_base, params_.max_level_photo,
                     params_.min_eig_thr_photo, params_.win_size_w_photo,
                     params_.win_size_h_photo, params_.fast_detection_delta_photo
+#endif
+#ifdef MULTI_UAV
+                    , params_.descriptor_scale_factor, params_.descriptor_patch_size,
+                    params_.descriptor_pyramid
 #endif
             );
 
@@ -197,9 +196,14 @@ void VIO::setUp(const Params &params) {
 #endif
 
     vio_updater_ =
-            VioUpdater(tracker_, state_manager_, track_manager_, params_.sigma_img,
-                       params_.sigma_range, params_.rho_0, params_.sigma_rho_0,
-                       params_.min_track_length, sigma_landmark, ci_msckf_w,
+            VioUpdater(state_manager_, track_manager_, params_.sigma_img,
+                       params_.sigma_range, params_.rho_0,
+                       params_.sigma_rho_0,
+                       params_.min_track_length,
+#ifdef MULTI_UAV
+                       place_recognition_,
+#endif
+                       sigma_landmark, ci_msckf_w,
                        ci_slam_w, params_.iekf_iter);
 
     // EKF setup
@@ -221,6 +225,48 @@ void VIO::setLastSunAngleMeasurement(
     last_angle_measurement_ = angle_measurement;
 }
 
+std::optional<State> VIO::processTracks(const double &timestamp,
+                                        const unsigned int seq, const MatchList &matches,
+                                        TiledImage &match_img,
+                                        TiledImage &feature_img) {
+#if defined(MULTI_UAV) && defined(DEBUG)
+    // used to create the match image in debug mode for the MULTI_UAV system
+    matches_img_ = match_img.clone();
+#endif
+    // Time correction
+    const auto timestamp_corrected = timestamp + params_.time_offset;
+
+    // Pass measurement data to updater
+    // match list from a separate tracker module.
+    VioMeasurement measurement(timestamp_corrected, seq, matches, match_img,
+                               last_range_measurement_, last_angle_measurement_);
+
+    vio_updater_.setMeasurement(measurement);
+
+// Avoid data race between the Visual update and the Multi UAV update.
+// The visual update rewrites and modifies the tracks.
+// The multi UAV update reads the tracks.
+#if defined(MULTI_THREAD) && defined(MULTI_UAV)
+    std::lock_guard<std::mutex> lock(mtx_);
+#endif
+
+    // Process update measurement with xEKF
+    auto updated_state = ekf_.processUpdateMeasurement();
+
+    // Set state timestamp to original image timestamp for ID purposes in output.
+    // We don't do that if that state is invalid, since the timestamp also carries
+    // the invalid signature.
+    if (updated_state.has_value()) {
+        updated_state->setTime(timestamp);
+    }
+
+    // Populate GUI image outputs
+    match_img = vio_updater_.getMatchImage();
+    feature_img = vio_updater_.getFeatureImage();
+
+    return updated_state;
+}
+
 std::optional<State> VIO::processImageMeasurement(const double &timestamp,
                                                   const unsigned int seq,
                                                   TiledImage &match_img,
@@ -232,14 +278,21 @@ std::optional<State> VIO::processImageMeasurement(const double &timestamp,
     // Time correction
     const auto timestamp_corrected = timestamp + params_.time_offset;
 
-    BOOST_LOG_TRIVIAL(info) << "Timestamp: " << timestamp << std::endl
-                            << "Offset: " << params_.time_offset << std::endl
-                            << "Timestamp corrected: " << timestamp_corrected
-                            << std::endl;
     // Pass measurement data to updater
-    MatchList empty_list;  // TODO(jeff) get rid of image callback and process
+    MatchList matches;
+
+    // Track features
+    tracker_.track(match_img, timestamp,
+                   seq);
+
+    // If we are processing images and last image didn't go back in time
+    if (tracker_.checkMatches()) {
+        // set the current matches to the new discovered matches
+        matches = tracker_.getMatches();
+    }
+
     // match list from a separate tracker module.
-    VioMeasurement measurement(timestamp_corrected, seq, empty_list, match_img,
+    VioMeasurement measurement(timestamp_corrected, seq, matches, match_img,
                                last_range_measurement_, last_angle_measurement_);
 
     vio_updater_.setMeasurement(measurement);
@@ -282,14 +335,6 @@ std::optional<State> VIO::processMatchesMeasurement(
     if (vio_updater_.state_manager_.poseSize()) {
         matches = importMatches(match_vector, seq, match_img);
     }
-
-    // Compute 2D image coordinates of the LRF impact point on the ground
-    Feature lrf_img_pt;
-    lrf_img_pt.setXDist(static_cast<double>((camera_->getWidth() + 1) / 2.0));
-    lrf_img_pt.setYDist(static_cast<double>((camera_->getHeight() + 1) / 2.0));
-    camera_->undistort(lrf_img_pt);
-    last_range_measurement_.img_pt = lrf_img_pt;
-    last_range_measurement_.img_pt_n = camera_->normalize(lrf_img_pt);
 
     // Pass measurement data to updater
     VioMeasurement measurement(timestamp_corrected, seq, matches, feature_img,
@@ -452,9 +497,9 @@ void VIO::getDataToSend(std::shared_ptr<SimpleState> &state_ptr,
 
 cv::Mat VIO::getDescriptors() {
 #ifdef MULTI_THREAD
-  std::lock_guard<std::mutex> lock(mtx_);
+    std::lock_guard<std::mutex> lock(mtx_);
 #endif
-  return place_recognition_->getDescriptors();
+    return place_recognition_->getDescriptors();
 }
 
 void VIO::processOtherRequests(const int uav_id, cv::Mat &descriptors,
@@ -463,108 +508,108 @@ void VIO::processOtherRequests(const int uav_id, cv::Mat &descriptors,
                                std::vector<int> &anchor_idxs,
                                TrackList &opp_tracks) {
 #ifdef TIMING
-  // Set up and start internal timing
-  clock_t clock1, clock2;
-  clock1 = clock();
+    // Set up and start internal timing
+    clock_t clock1, clock2;
+    clock1 = clock();
 #endif
 
-  KeyframePtr candidate;  // the candidate will be sent to the UAV `uav_id` as
-  // measurement message
-  place_recognition_->findPlace(uav_id, descriptors, candidate);
+    KeyframePtr candidate;  // the candidate will be sent to the UAV `uav_id` as
+    // measurement message
+    place_recognition_->findPlace(uav_id, descriptors, candidate);
 #ifdef TIMING
-  clock2 = clock();
-  BOOST_LOG_TRIVIAL(info) << "Process Other Requests ======================="
-                          << std::endl;
-  BOOST_LOG_TRIVIAL(info) << "Times ===================================="
-                          << std::endl
-                          << "Place recognition:               "
-                          << (double)(clock2 - clock1) / CLOCKS_PER_SEC * 1000
-                          << " ms" << std::endl
-                          << "=========================================="
-                          << std::endl;
+    clock2 = clock();
+    BOOST_LOG_TRIVIAL(info) << "Process Other Requests ======================="
+                            << std::endl;
+    BOOST_LOG_TRIVIAL(info) << "Times ===================================="
+                            << std::endl
+                            << "Place recognition:               "
+                            << (double)(clock2 - clock1) / CLOCKS_PER_SEC * 1000
+                            << " ms" << std::endl
+                            << "=========================================="
+                            << std::endl;
 #endif
 
-  if (candidate != nullptr) {
-    state = candidate->getState();
-    slam_tracks = candidate->getSlamTracks();
-    msckf_tracks = candidate->getMsckfTracks();
-    opp_tracks = candidate->getOppTracks();
-    anchor_idxs = candidate->getAnchors();
-  }
+    if (candidate != nullptr) {
+        state = candidate->getState();
+        slam_tracks = candidate->getSlamTracks();
+        msckf_tracks = candidate->getMsckfTracks();
+        opp_tracks = candidate->getOppTracks();
+        anchor_idxs = candidate->getAnchors();
+    }
 }
 
 std::optional<State> VIO::processOtherMeasurements(
-    double timestamp, const int uav_id, const Vectorx &dynamic_state,
-    const Vectorx &positions_state, const Vectorx &orientations_state,
-    const Vectorx &features_state, const Matrix &cov,
-    const TrackListPtr &received_msckf_trcks_ptr,
-    const TrackListPtr &received_slam_trcks_ptr,
-    const TrackListPtr &received_opp_tracks_ptr,
-    const std::vector<int> &anchor_idxs, cv::Mat &dst) {
-  std::shared_ptr<SimpleState> ptr = std::make_shared<SimpleState>(
-      dynamic_state, positions_state, orientations_state, features_state, cov,
-      anchor_idxs);
+        double timestamp, const int uav_id, const Vectorx &dynamic_state,
+        const Vectorx &positions_state, const Vectorx &orientations_state,
+        const Vectorx &features_state, const Matrix &cov,
+        const TrackListPtr &received_msckf_trcks_ptr,
+        const TrackListPtr &received_slam_trcks_ptr,
+        const TrackListPtr &received_opp_tracks_ptr,
+        const std::vector<int> &anchor_idxs, cv::Mat &dst) {
+    std::shared_ptr<SimpleState> ptr = std::make_shared<SimpleState>(
+            dynamic_state, positions_state, orientations_state, features_state, cov,
+            anchor_idxs);
 
 /** Avoid data race between the Visual update and the Multi UAV update.
  *  The visual update rewrites and modifies the tracks.
  *  The multi UAV update reads the tracks.
  * */
 #ifdef MULTI_THREAD
-  std::lock_guard<std::mutex> lock(mtx_);
+    std::lock_guard<std::mutex> lock(mtx_);
 #endif
-  // retrieve current UAV data
-  TrackList current_msckf, current_slam, current_opp_tracks;
-  vio_updater_.getMsckfTracks(current_msckf);
-  vio_updater_.getSlamTracks(current_slam);
-  vio_updater_.getOppTracks(current_opp_tracks);
-  int corr_idx = 0;
-  for (size_t i = 0; i < current_opp_tracks.size(); i++) {
-    if (current_opp_tracks[i - corr_idx].size() < 3) {
-      current_opp_tracks.erase(current_opp_tracks.begin() + i - corr_idx);
-      corr_idx++;
+    // retrieve current UAV data
+    TrackList current_msckf, current_slam, current_opp_tracks;
+    vio_updater_.getMsckfTracks(current_msckf);
+    vio_updater_.getSlamTracks(current_slam);
+    vio_updater_.getOppTracks(current_opp_tracks);
+    int corr_idx = 0;
+    for (size_t i = 0; i < current_opp_tracks.size(); i++) {
+        if (current_opp_tracks[i - corr_idx].size() < 3) {
+            current_opp_tracks.erase(current_opp_tracks.begin() + i - corr_idx);
+            corr_idx++;
+        }
     }
-  }
 
-  // Proceede iif there are tracks.
-  if (current_slam.empty() && current_opp_tracks.empty()) {
-    return std::nullopt;
-  }
+    // Proceede iif there are tracks.
+    if (current_slam.empty() && current_opp_tracks.empty()) {
+        return std::nullopt;
+    }
 
 #ifdef TIMING
-  // Set up and start internal timing
-  clock_t clock1, clock2;
-  clock1 = clock();
+    // Set up and start internal timing
+    clock_t clock1, clock2;
+    clock1 = clock();
 #endif
 
-  // Find place correspondence.
-  bool place_found = place_recognition_->findCorrespondences(
-      uav_id, current_msckf, received_msckf_trcks_ptr, current_slam,
-      received_slam_trcks_ptr, current_opp_tracks, received_opp_tracks_ptr, ptr,
-      dst, dst);
+    // Find place correspondence.
+    bool place_found = place_recognition_->findCorrespondences(
+            uav_id, current_msckf, received_msckf_trcks_ptr, current_slam,
+            received_slam_trcks_ptr, current_opp_tracks, received_opp_tracks_ptr, ptr,
+            dst, dst);
 
-  if (!place_found) {
-    return std::nullopt;
-  } else {
+    if (!place_found) {
+        return std::nullopt;
+    } else {
 #ifdef DEBUG
-    BOOST_LOG_TRIVIAL(info)  << "\033[1;33mPlace recognition\033[0m found correspondence!"
-              << std::endl;
+        BOOST_LOG_TRIVIAL(info) << "\033[1;33mPlace recognition\033[0m found correspondence!"
+                                << std::endl;
 #endif
-  }
-  // process the SLAM updates
-  auto updated_state = ekf_.processOthersMeasurement(timestamp);
+    }
+    // process the SLAM updates
+    auto updated_state = ekf_.processOthersMeasurement(timestamp);
 
 #ifdef TIMING
-  clock2 = clock();
-  BOOST_LOG_TRIVIAL(info)  << "Process Other Measurements ======================="
-            << std::endl;
-  BOOST_LOG_TRIVIAL(info)  << "Times ====================================" << std::endl
-            << "Find matches:               "
-            << (double)(clock2 - clock1) / CLOCKS_PER_SEC * 1000 << " ms"
-            << std::endl
-            << "==========================================" << std::endl;
+    clock2 = clock();
+    BOOST_LOG_TRIVIAL(info)  << "Process Other Measurements ======================="
+              << std::endl;
+    BOOST_LOG_TRIVIAL(info)  << "Times ====================================" << std::endl
+              << "Find matches:               "
+              << (double)(clock2 - clock1) / CLOCKS_PER_SEC * 1000 << " ms"
+              << std::endl
+              << "==========================================" << std::endl;
 #endif
 
-  return updated_state;
+    return updated_state;
 }
 
 
