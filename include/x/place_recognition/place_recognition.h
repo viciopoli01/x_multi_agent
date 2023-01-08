@@ -56,17 +56,6 @@ class PlaceRecognition {
   PlaceRecognition(std::shared_ptr<CameraModel> cam, const fsm::path &vocabulary_path, double pr_score_thr,
                    double pr_min_distance, double pr_ratio_thr);
 
-  /**
-   *
-   *
-   * @param img
-   * @param keypoints
-   * @param descriptors
-   * @param fast_thr
-   */
-  void compute(const cv::Mat &img, Keypoints &keypoints,
-               Descriptors &descriptors, int fast_thr);
-
   void findPlace(int receiver_uav_id, const cv::Mat &descriptors,
                  KeyframePtr &candidate);
 
@@ -108,7 +97,7 @@ class PlaceRecognition {
 
   void addKeyframe(const KeyframePtr &frame);
 
-  cv::Mat getDescriptors();
+  cv::Mat getDescriptor(const MatchList& matchlist);
 
  private:
   std::shared_ptr<CameraModel> camera_;

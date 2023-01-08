@@ -44,6 +44,9 @@ option(REQUEST_COMM "Enable request-response communication pipeline" ON)
 # Set to ON for using the ground truth matches for multi UAV
 option(GT_DEBUG "Expect landmarks position ground truth as input" OFF)
 
+# Set to ON for building the samples
+option(SAMPLES "Build the samples folder" ON)
+
 #################################################################################
 
 # Set definitions
@@ -89,6 +92,11 @@ if (MULTI_UAV)
         add_definitions(-DREQUEST_COMM)
         message(STATUS "REQUEST_COMM: ON")
     endif ()
+endif ()
+
+if (SAMPLES)
+    add_definitions(-DSAMPLES)
+    message(STATUS "Samples: ON")
 endif ()
 
 add_definitions(-D_LINUX -D_REENTRANT)
@@ -319,6 +327,10 @@ install(FILES
         DESTINATION ${CMAKE_EXPORT_DESTINATION}
         COMPONENT ${PROJECT_NAME}
         )
+
+if(SAMPLES)
+    add_subdirectory(samples)
+endif()
 
 # Support automatic RPM/DEB generation via CPack
 set(CPACK_CMAKE_GENERATOR ${CMAKE_GENERATOR})

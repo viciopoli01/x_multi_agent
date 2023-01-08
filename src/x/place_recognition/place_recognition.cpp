@@ -657,6 +657,10 @@ void PlaceRecognition::addKeyframe(const KeyframePtr &frame) {
     database_->addKeyframe(frame);
 }
 
-cv::Mat PlaceRecognition::getDescriptors() {
-    return database_->computeVLAD(descriptros_);
+cv::Mat PlaceRecognition::getDescriptor(const MatchList &matchlist) {
+    cv::Mat desc;
+    for (const auto &f: matchlist) {
+        desc.push_back(f.current.getDescriptor().clone());
+    }
+    return database_->computeVLAD(desc);
 }

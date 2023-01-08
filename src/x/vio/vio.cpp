@@ -236,9 +236,10 @@ std::optional<State> VIO::processTracks(const double &timestamp,
     // Time correction
     const auto timestamp_corrected = timestamp + params_.time_offset;
 
+    matches_ = matches;
     // Pass measurement data to updater
     // match list from a separate tracker module.
-    VioMeasurement measurement(timestamp_corrected, seq, matches, match_img,
+    VioMeasurement measurement(timestamp_corrected, seq, matches_, match_img,
                                last_range_measurement_, last_angle_measurement_);
 
     vio_updater_.setMeasurement(measurement);
@@ -499,7 +500,7 @@ cv::Mat VIO::getDescriptors() {
 #ifdef MULTI_THREAD
     std::lock_guard<std::mutex> lock(mtx_);
 #endif
-    return place_recognition_->getDescriptors();
+    return place_recognition_->getDescriptor(matches_);
 }
 
 void VIO::processOtherRequests(const int uav_id, cv::Mat &descriptors,

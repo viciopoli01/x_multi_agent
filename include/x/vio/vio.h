@@ -280,6 +280,7 @@ namespace x {
         Keyframe candidate_keyframe_;
         std::shared_ptr<PlaceRecognition>
             place_recognition_;  // this can be nullptr when MULTI_UAV is off
+            MatchList matches_;
 #endif
     };
 }  // namespace x
