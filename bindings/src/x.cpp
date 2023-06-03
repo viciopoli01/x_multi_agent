@@ -53,11 +53,12 @@ PYBIND11_MODULE(x_bind, m) {
     py::class_<VIO>(m, "VIO")
             .def(py::init<>())
             .def("initAtTime", &VIO::initAtTime, "time"_a)
+            .def("isInitialized", &VIO::isInitialized, "True if initialized")
             .def("isInitialized", &VIO::isInitialized, "Return true if initialized")
-            .def("processImu", &VIO::processImu, "timestamp"_a, "seq"_a, "w_a"_a, "a_m"_a)
+            .def("processImu", &VIO::processImu, "timestamp"_a, "seq"_a, "w_m"_a, "a_m"_a)
             .def("processTracksNoFrame", &VIO::processTracksNoFrame, "timestamp"_a, "seq"_a,
                  "matches"_a, "h"_a, "w"_a, py::return_value_policy::reference_internal)
-            .def("setUp", &VIO::setUp, "params")
+            .def("setUp", &VIO::setUp, "params"_a)
             .def("loadParamsFromYaml",
                  [](VIO &self, std::string &path) {
                      auto a = fsm::path(path);
