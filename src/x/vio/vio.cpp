@@ -201,7 +201,7 @@ void VIO::setUp(const Params &params) {
                        params_.sigma_rho_0,
                        params_.min_track_length,
 #ifdef MULTI_UAV
-                       place_recognition_,
+                    place_recognition_,
 #endif
                        sigma_landmark, ci_msckf_w,
                        ci_slam_w, params_.iekf_iter);
@@ -223,6 +223,18 @@ void VIO::setLastRangeMeasurement(const RangeMeasurement &range_measurement) {
 void VIO::setLastSunAngleMeasurement(
         const SunAngleMeasurement &angle_measurement) {
     last_angle_measurement_ = angle_measurement;
+}
+
+std::optional<State> VIO::processTracksNoFrame(const double &timestamp,
+                                          const unsigned int seq, const MatchList &matches, int h, int w) {
+
+    cv::Mat image(320, 240, CV_8UC3, cv::Scalar(0, 0, 0));
+    TiledImage match_img = TiledImage(image, timestamp,
+                                      seq, params_.n_tiles_h, params_.n_tiles_w,
+                                      params_.max_feat_per_tile);
+    TiledImage feature_img = TiledImage(match_img.clone());
+
+    return processTracks(timestamp, seq, matches, match_img, feature_img);
 }
 
 std::optional<State> VIO::processTracks(const double &timestamp,

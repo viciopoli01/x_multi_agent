@@ -31,21 +31,22 @@ option(TIMING "Publish timing information" OFF)
 option(PROFILING "Enable profiling flags" OFF)
 
 # Set to ON to enable photometric calibration as in https://arxiv.org/abs/2012.14292
-option(PHOTOMETRIC_CALI "Enable photometric calibration for thermal images" ON)
+option(PHOTOMETRIC_CALI "Enable photometric calibration for thermal images" OFF)
 
 # Set to ON to enable Multi UAV system
-option(MULTI_UAV "Enable multi-UAV collaboration" ON)
-add_definitions(-DMULTI_UAV)
-add_definitions(-DREQUEST_COMM)
-add_definitions(-DPHOTOMETRIC_CALI)
+option(MULTI_UAV "Enable multi-UAV collaboration" OFF)
+
 # Set to ON if you want to enable the request protocol for the communication
-option(REQUEST_COMM "Enable request-response communication pipeline" ON)
+option(REQUEST_COMM "Enable request-response communication pipeline" OFF)
 
 # Set to ON for using the ground truth matches for multi UAV
 option(GT_DEBUG "Expect landmarks position ground truth as input" OFF)
 
 # Set to ON for building the samples
-option(SAMPLES "Build the samples folder" ON)
+option(SAMPLES "Build the samples folder" OFF)
+
+# bindings
+option(BINDINGS "Build the python bindings folder" ON)
 
 #################################################################################
 
@@ -262,7 +263,7 @@ if (PHOTOMETRIC_CALI)
     set(SOURCE ${SOURCE} src/x/photometric_calibration/irPhotoCalib.cpp)
 endif ()
 
-add_library(x ${SOURCE})
+add_library(x SHARED ${SOURCE})
 
 message("PHOTOMETRIC_DIRS: ${PHOTOMETRIC_DIRS}")
 message("MULTI_UAV_DIRS: ${MULTI_UAV_DIRS}")
@@ -328,9 +329,13 @@ install(FILES
         COMPONENT ${PROJECT_NAME}
         )
 
-if(SAMPLES)
+if (SAMPLES)
     add_subdirectory(samples)
-endif()
+endif ()
+
+if (BINDINGS)
+    add_subdirectory(bindings)
+endif ()
 
 # Support automatic RPM/DEB generation via CPack
 set(CPACK_CMAKE_GENERATOR ${CMAKE_GENERATOR})

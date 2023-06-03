@@ -116,6 +116,8 @@ namespace x {
                                            TiledImage &match_img,
                                            TiledImage &feature_img);
 
+        std::optional<State> processTracksNoFrame(const double &timestamp,
+                                                const unsigned int seq, const MatchList &matches, int h, int w);
         /**
          * Creates an update measurement from visual matches and pass it to EKF.
          *
@@ -280,8 +282,8 @@ namespace x {
         Keyframe candidate_keyframe_;
         std::shared_ptr<PlaceRecognition>
             place_recognition_;  // this can be nullptr when MULTI_UAV is off
-            MatchList matches_;
 #endif
+        MatchList matches_;
     };
 }  // namespace x
 
