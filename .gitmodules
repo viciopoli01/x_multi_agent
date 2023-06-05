@@ -3,3 +3,7 @@
 	path = bindings/external/pybind11
 	url = ../../pybind/pybind11
 	branch = stable
+[submodule "bindings/external/pybind11cv"]
+	path = bindings/external/pybind11cv
+	url = https://github.com/edmBernard/pybind11_opencv_numpy
+	branch = master

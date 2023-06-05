@@ -29,6 +29,8 @@ namespace x::Camera {
 
         DistortionModel cameraType;
 
+        Params(){};
+
         Params(double fx,
                double fy,
                double cx,

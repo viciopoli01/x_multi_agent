@@ -228,7 +228,7 @@ void VIO::setLastSunAngleMeasurement(
 std::optional<State> VIO::processTracksNoFrame(const double &timestamp,
                                           const unsigned int seq, const MatchList &matches, int h, int w) {
 
-    cv::Mat image(320, 240, CV_8UC3, cv::Scalar(0, 0, 0));
+    cv::Mat image(h, w, CV_8UC1, cv::Scalar(0));
     TiledImage match_img = TiledImage(image, timestamp,
                                       seq, params_.n_tiles_h, params_.n_tiles_w,
                                       params_.max_feat_per_tile);

@@ -8,7 +8,8 @@ add_subdirectory(external/pybind11 EXCLUDE_FROM_ALL)
 PYBIND11_ADD_MODULE(
         x_bind
         SHARED
-        src/x.cpp)
+        src/x.cpp
+        external/pybind11cv/ndarray_converter.cpp)
 
 target_compile_features(x_bind PRIVATE cxx_std_17)
 

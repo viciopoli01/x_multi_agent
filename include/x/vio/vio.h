@@ -117,7 +117,8 @@ namespace x {
                                            TiledImage &feature_img);
 
         std::optional<State> processTracksNoFrame(const double &timestamp,
-                                                const unsigned int seq, const MatchList &matches, int h, int w);
+                                                  const unsigned int seq, const MatchList &matches, int h, int w);
+
         /**
          * Creates an update measurement from visual matches and pass it to EKF.
          *
@@ -156,6 +157,9 @@ namespace x {
          * @return Params
          */
         Params loadParamsFromYaml(fsm::path &path);
+
+
+        Params getParams() { return params_; }
 
 #ifdef MULTI_UAV
 

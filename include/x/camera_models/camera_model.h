@@ -51,6 +51,8 @@ namespace x {
 
         [[nodiscard]] cv::Matx33d getCVCameraMatrix() const;
 
+        [[nodiscard]] Camera::Params getCameraParams() const { return cameraParams_; }
+
 #ifdef MULTI_UAV
         [[nodiscard]] cv::KeyPoint normalize(const cv::KeyPoint &point) const;
         [[nodiscard]] cv::KeyPoint denormalize(const cv::KeyPoint &point) const;
