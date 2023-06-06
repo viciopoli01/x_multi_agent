@@ -18,12 +18,14 @@ namespace x {
     /**
      * Base class
      */
-    class CameraModel {
+    class CameraModel : public std::enable_shared_from_this<CameraModel> {
     public:
 
         explicit CameraModel(const Camera::Params &params);
 
-        virtual ~CameraModel() = default;
+        virtual ~
+
+        CameraModel() = default;
 
         void set(const Camera::Params &cameraParams) {
             cameraParams_ = cameraParams;

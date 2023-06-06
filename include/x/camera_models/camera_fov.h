@@ -8,7 +8,7 @@
 #include "camera_model.h"
 
 namespace x {
-    class CameraFov : public CameraModel {
+    class CameraFov : public CameraModel, std::enable_shared_from_this<CameraFov> {
     public:
         CameraFov(const Camera::Params &params) : CameraModel(params) {
             s_term_ = 1.0 / (2.0 * std::tan(params.dist_coeff[0] / 2.0));

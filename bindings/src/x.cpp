@@ -21,7 +21,7 @@ using namespace x;
 
 PYBIND11_MAKE_OPAQUE(x::MatchList)
 
-//namespace x {
+//namespace x_py {
 //    class PyCameraModel : public x::CameraModel {
 //    public:
 //        /* Inherit the constructors */
@@ -181,21 +181,63 @@ PYBIND11_MODULE(x_bind, m) {
                 return self.dist_coeff;
             });
 
-//    py::class_<CameraModel, PyCameraModel>(m, "CameraModel")
+//    py::class_<CameraModel, x_py::PyCameraModel>(m, "CameraModel")
 //            .def(py::init<Camera::Params &>(), "params"_a)
 //            .def("undistort", [](CameraModel &self, Feature &f) {
 //                self.undistort(f);
 //                return f;
 //            });
 
-
-//    py::class_<CameraFov>(m, "CameraFov")
-//            .def(py::init<Camera::Params &>(), "params"_a)
-//            .def("undistort", &CameraFov::undistort);
+    py::class_<CameraFov, std::shared_ptr<CameraFov>>(m, "CameraFov")
+            .def(py::init<Camera::Params &>(), "params"_a)
+            .def("undistort", &CameraFov::undistort);
 //
     py::class_<Params>(m, "Params")
             .def(py::init<>())
             .def("camera_params", [](Params &self, Camera::Params &p) {
                 p = self.camera->getCameraParams();
-            });
+            })
+            .def("non_max_supp", [](const Params &self) { return self.non_max_supp; })
+            .def("block_half_length", [](const Params &self) { return self.block_half_length; })
+            .def("margin", [](const Params &self) { return self.margin; })
+            .def("n_feat_min", [](const Params &self) { return self.n_feat_min; })
+            .def("outlier_method", [](const Params &self) { return self.outlier_method; })
+            .def("outlier_param1", [](const Params &self) { return self.outlier_param1; })
+            .def("outlier_param2", [](const Params &self) { return self.outlier_param2; })
+            .def("win_size_w", [](const Params &self) { return self.win_size_w; })
+            .def("win_size_h", [](const Params &self) { return self.win_size_h; })
+            .def("max_level", [](const Params &self) { return self.max_level; })
+            .def("min_eig_thr", [](const Params &self) { return self.min_eig_thr; })
+            .def("n_tiles_h", [](const Params &self) { return self.min_eig_thr; })
+            .def("n_tiles_h", [](const Params &self) { return self.min_eig_thr; })
+            .def("fast_detection_delta", [](const Params &self) { return self.fast_detection_delta; })
+            .def("camera", [](const Params &self) { return self.camera; });
+
+    py::class_<Tracker>(m, "Tracker")
+            .def(py::init<>())
+            .def("set_params",
+                 [](Tracker &self, std::shared_ptr<CameraFov> &cam, int fast_detection_delta, bool non_max_supp,
+                    unsigned int block_half_length, unsigned int margin,
+                    unsigned int n_feat_min, int outlier_method,
+                    double outlier_param1, double outlier_param2, int win_size_w,
+                    int win_size_h, int max_level, double min_eig_thr) {
+                     self.setParams(cam, fast_detection_delta, non_max_supp, block_half_length, margin, n_feat_min,
+                                    outlier_method,
+                                    outlier_param1, outlier_param2, win_size_w,
+                                    win_size_h, max_level, min_eig_thr);
+                 }, "cam"_a, "fast_detection_delta"_a, "non_max_supp"_a,
+                 "block_half_length"_a, "margin"_a,
+                 "n_feat_min"_a, "outlier_method"_a,
+                 "outlier_param1"_a, "outlier_param2"_a, "win_size_w"_a,
+                 "win_size_h"_a, "max_level"_a, "min_eig_thr"_a)
+            .def("get_matches", &Tracker::getMatches, "Retrieve matches")
+            .def("track", [](Tracker &self, cv::Mat &current_img, const int seq, const double &timestamp,
+                             unsigned int frame_number, const int n_tiles_h, const int n_tiles_w,
+                             const int max_feat_per_tile) {
+                     TiledImage current_img_tiled = TiledImage(current_img, timestamp,
+                                                               seq, n_tiles_h, n_tiles_w,
+                                                               max_feat_per_tile);
+                     self.track(current_img_tiled, timestamp, frame_number);
+                 }, "current_img"_a, "seq"_a, "timestamp"_a, "frame_number"_a, "n_tiles_h"_a, "n_tiles_w"_a,
+                 "max_feat_per_tile"_a);
 }
