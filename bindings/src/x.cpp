@@ -20,8 +20,9 @@ namespace py = pybind11;
 using namespace x;
 
 PYBIND11_MAKE_OPAQUE(x::MatchList)
+PYBIND11_MAKE_OPAQUE(std::vector<Eigen::Vector3d>)
 
-//namespace x_py {
+namespace x_py {
 //    class PyCameraModel : public x::CameraModel {
 //    public:
 //        /* Inherit the constructors */
@@ -37,7 +38,64 @@ PYBIND11_MAKE_OPAQUE(x::MatchList)
 //            );
 //        }
 //    };
-//}
+    template<class CameraModelBase = x::CameraModel>
+    class PyCameraModel : public CameraModelBase {
+    public:
+        using CameraModelBase::CameraModelBase; // Inherit constructors
+        void undistort(x::Feature &feature) override {
+            PYBIND11_OVERRIDE_PURE(void, CameraModelBase, undistort, feature);
+        }
+    };
+
+
+//    class PyCameraFov : public x::CameraFov {
+//    public:
+//        /* Inherit the constructors */
+//        using CameraFov::CameraFov;
+//
+//        /* Trampoline (need one for each virtual function) */
+//        void undistort(Feature &feature) override {
+//            PYBIND11_OVERRIDE_PURE(
+//                    void, /* Return type */
+//                    x::CameraFov,      /* Parent class */
+//                    undistort,          /* Name of function in C++ (must match Python name) */
+//                    feature      /* Argument(s) */
+//            );
+//        }
+//    };
+//
+//    class PyCameraRadTan : public x::CameraRadTan {
+//    public:
+//        /* Inherit the constructors */
+//        using CameraRadTan::CameraRadTan;
+//
+//        /* Trampoline (need one for each virtual function) */
+//        void undistort(Feature &feature) override {
+//            PYBIND11_OVERRIDE_PURE(
+//                    void, /* Return type */
+//                    x::CameraModel,      /* Parent class */
+//                    undistort,          /* Name of function in C++ (must match Python name) */
+//                    feature      /* Argument(s) */
+//            );
+//        }
+//    };
+//
+//    class PyCameraEquidistant : public x::CameraEquidistant {
+//    public:
+//        /* Inherit the constructors */
+//        using CameraEquidistant::CameraEquidistant;
+//
+//        /* Trampoline (need one for each virtual function) */
+//        void undistort(Feature &feature) override {
+//            PYBIND11_OVERRIDE_PURE(
+//                    void, /* Return type */
+//                    x::CameraModel,      /* Parent class */
+//                    undistort,          /* Name of function in C++ (must match Python name) */
+//                    feature      /* Argument(s) */
+//            );
+//        }
+//    };
+}
 
 // namespace pybind11::detail
 PYBIND11_MODULE(x_bind, m) {
@@ -102,26 +160,23 @@ PYBIND11_MODULE(x_bind, m) {
 
     py::bind_vector<x::MatchList>(m, "MatchList");
 
-//    py::class_<MatchList>(m, "MatchList")
-//            .def(py::init<>())
-//            .def("clear", &MatchList::clear)
-//            .def("pop_back", &MatchList::pop_back)
-//            .def("append",&MatchList::push_back)
-//            .def("__len__", [](const MatchList &v) { return v.size(); })
-//            .def("__iter__", [](MatchList &v) {
-//                return py::make_iterator(v.begin(), v.end());
-//            }, py::keep_alive<0, 1>());
-
     py::class_<State>(m, "State")
             .def(py::init<>())
             .def("getPosition", &State::getPosition)
             .def("getOrientation", [](State &self) -> std::vector<double> {
                 Eigen::Quaterniond q = self.getOrientation();
                 return {q.w(), q.x(), q.y(), q.z()};
-            });
+            })
+            .def("computeCameraPosition", &State::computeCameraPosition, "Return camera Position")
+            .def("computeCameraOrientation", [](State &self) -> std::vector<double> {
+                Eigen::Quaterniond q = self.computeCameraOrientation();
+                return {q.w(), q.x(), q.y(), q.z()};
+            }, "Return camera Orientation");
 
     py::class_<Updater, VioUpdater>(m, "VioUpdater")
             .def(py::init<>());
+
+    py::bind_vector<std::vector<Eigen::Vector3d>>(m, "Vector3d");
 
     py::class_<VIO>(m, "VIO")
             .def(py::init<>())
@@ -129,8 +184,7 @@ PYBIND11_MODULE(x_bind, m) {
             .def("isInitialized", &VIO::isInitialized, "True if initialized")
             .def("isInitialized", &VIO::isInitialized, "Return true if initialized")
             .def("processImu", &VIO::processImu, "timestamp"_a, "seq"_a, "w_m"_a, "a_m"_a)
-            .def("processTracksNoFrame", &VIO::processTracksNoFrame, "timestamp"_a, "seq"_a,
-                 "matches"_a, "h"_a, "w"_a, py::return_value_policy::copy)
+            .def("computeSLAMCartesianFeaturesForState", &VIO::computeSLAMCartesianFeaturesForState, "state"_a)
             .def("processTracks", [](VIO &self, const double &timestamp,
                                      const unsigned int seq, const MatchList &matches, const cv::Mat &image) {
                      auto p = self.getParams();
@@ -138,9 +192,9 @@ PYBIND11_MODULE(x_bind, m) {
                                                        seq, p.n_tiles_h, p.n_tiles_w,
                                                        p.max_feat_per_tile);
                      TiledImage feature_img = TiledImage(match_img.clone());
-                     self.processTracks(timestamp, seq, matches, match_img, feature_img);
+                     auto s = self.processTracks(timestamp, seq, matches, match_img, feature_img);
                      cv::Mat return_img(feature_img);
-                     return return_img;
+                     return py::make_tuple(s, return_img);
                  }, "timestamp"_a, "seq"_a,
                  "matches"_a, "image"_a)
             .def("setUp", &VIO::setUp, "params"_a)
@@ -181,17 +235,54 @@ PYBIND11_MODULE(x_bind, m) {
                 return self.dist_coeff;
             });
 
-//    py::class_<CameraModel, x_py::PyCameraModel>(m, "CameraModel")
-//            .def(py::init<Camera::Params &>(), "params"_a)
-//            .def("undistort", [](CameraModel &self, Feature &f) {
-//                self.undistort(f);
-//                return f;
-//            });
+    py::class_<CameraModel, std::shared_ptr<CameraModel>, x_py::PyCameraModel<>>(m, "CameraModel")
+            .def(py::init<const Camera::Params &>(), "params"_a);
 
-    py::class_<CameraFov, std::shared_ptr<CameraFov>>(m, "CameraFov")
-            .def(py::init<Camera::Params &>(), "params"_a)
-            .def("undistort", &CameraFov::undistort);
-//
+    py::class_<CameraFov, std::shared_ptr<CameraFov>, CameraModel, x_py::PyCameraModel<CameraFov>>(m, "CameraFov")
+            .def(py::init<const Camera::Params &>(), "params"_a)
+            .def("undistort", &CameraFov::undistort, "feature"_a)
+            .def("normalize", [](CameraFov &self, const Feature &f) { return self.normalize(f); }, "feature"_a)
+            .def("normalize",
+                 [](CameraFov &self, const Track &t, size_t max_size = 0) { return self.normalize(t, max_size); },
+                 "track"_a, "max_size"_a)
+            .def("normalize",
+                 [](CameraFov &self, const TrackList &t, size_t max_size = 0) { return self.normalize(t, max_size); },
+                 "track_list"_a, "max_size"_a);
+
+    py::class_<CameraRadTan, std::shared_ptr<CameraRadTan>, CameraModel, x_py::PyCameraModel<CameraRadTan>>(m,
+                                                                                                            "CameraRadTan")
+            .def(py::init<const Camera::Params &>(), "params"_a)
+            .def("undistort", &CameraRadTan::undistort, "feature"_a)
+            .def("normalize", [](CameraRadTan &self, const Feature &f) { return self.normalize(f); }, "feature"_a)
+            .def("normalize",
+                 [](CameraRadTan &self, const Track &t, size_t max_size = 0) { return self.normalize(t, max_size); },
+                 "track"_a, "max_size"_a)
+            .def("normalize",
+                 [](CameraRadTan &self, const TrackList &t, size_t max_size = 0) {
+                     return self.normalize(t, max_size);
+                 },
+                 "track_list"_a, "max_size"_a);
+
+    py::class_<CameraEquidistant, std::shared_ptr<CameraEquidistant>, CameraModel, x_py::PyCameraModel<CameraEquidistant>>(
+            m, "CameraEquidistant")
+            .def(py::init<const Camera::Params &>(), "params"_a)
+            .def("undistort", &CameraEquidistant::undistort, "feature"_a).def("normalize", [](CameraFov &self,
+                                                                                              const Feature &f) {
+                return self.normalize(f);
+            }, "feature"_a)
+            .def("normalize", [](CameraEquidistant &self, const Feature &f) { return self.normalize(f); }, "feature"_a)
+            .def("normalize",
+                 [](CameraEquidistant &self, const Track &t, size_t max_size = 0) {
+                     return self.normalize(t, max_size);
+                 },
+                 "track"_a, "max_size"_a)
+            .def("normalize",
+                 [](CameraEquidistant &self, const TrackList &t, size_t max_size = 0) {
+                     return self.normalize(t, max_size);
+                 },
+                 "track_list"_a, "max_size"_a);
+
+
     py::class_<Params>(m, "Params")
             .def(py::init<>())
             .def("camera_params", [](Params &self, Camera::Params &p) {
@@ -211,12 +302,14 @@ PYBIND11_MODULE(x_bind, m) {
             .def("n_tiles_h", [](const Params &self) { return self.min_eig_thr; })
             .def("n_tiles_h", [](const Params &self) { return self.min_eig_thr; })
             .def("fast_detection_delta", [](const Params &self) { return self.fast_detection_delta; })
-            .def("camera", [](const Params &self) { return self.camera; });
+            .def("camera", [](const Params &self) {
+                return self.camera;
+            });
 
     py::class_<Tracker>(m, "Tracker")
             .def(py::init<>())
             .def("set_params",
-                 [](Tracker &self, std::shared_ptr<CameraFov> &cam, int fast_detection_delta, bool non_max_supp,
+                 [](Tracker &self, std::shared_ptr<CameraModel> &cam, int fast_detection_delta, bool non_max_supp,
                     unsigned int block_half_length, unsigned int margin,
                     unsigned int n_feat_min, int outlier_method,
                     double outlier_param1, double outlier_param2, int win_size_w,

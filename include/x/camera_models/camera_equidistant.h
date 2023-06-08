@@ -8,7 +8,7 @@
 #include "camera_model.h"
 
 namespace x {
-    class CameraEquidistant : public CameraModel {
+    class CameraEquidistant : public CameraModel  {
     public:
         explicit CameraEquidistant(const Camera::Params &params) : CameraModel(params) {}
 
