@@ -20,6 +20,8 @@ namespace py = pybind11;
 using namespace x;
 
 PYBIND11_MAKE_OPAQUE(x::MatchList)
+PYBIND11_MAKE_OPAQUE(x::AttitudeList)
+PYBIND11_MAKE_OPAQUE(x::TranslationList)
 PYBIND11_MAKE_OPAQUE(std::vector<Eigen::Vector3d>)
 
 namespace x_py {
@@ -333,4 +335,46 @@ PYBIND11_MODULE(x_bind, m) {
                      self.track(current_img_tiled, timestamp, frame_number);
                  }, "current_img"_a, "seq"_a, "timestamp"_a, "frame_number"_a, "n_tiles_h"_a, "n_tiles_w"_a,
                  "max_feat_per_tile"_a);
+
+    py::class_<Attitude>(m, "Attitude")
+            .def(py::init<double, double, double, double>(),
+                 "ax"_a, "ay"_a, "az"_a, "aw"_a);
+    py::bind_vector<AttitudeList>(m, "AttitudeList");
+
+    py::class_<Translation>(m, "Translation")
+            .def(py::init<double, double, double>(),
+                 "tx"_a, "ty"_a, "tz"_a);
+    py::bind_vector<TranslationList>(m, "TranslationList");
+
+    py::class_<TrackManager>(m, "TrackManager")
+            .def(py::init<>())
+            .def("setCamera", [](TrackManager &self, std::shared_ptr<CameraModel> &cam) {
+                self.setCamera(cam);
+            })
+            .def("setMsckfbaselines", [](TrackManager &self, const double min_baseline_x_n,
+                                         const double min_baseline_y_n) {
+                self.setMsckfbaselines(min_baseline_x_n, min_baseline_y_n);
+            })
+            .def("getMsckfTracks", &TrackManager::getMsckfTracks, "Get Msckf tracks")
+            .def("getShortMsckfTracks", &TrackManager::getShortMsckfTracks, "Get short Msckf tracks")
+            .def("getNewSlamStdTracks", &TrackManager::getNewSlamStdTracks, "Get new std SLAM tracks")
+            .def("getNewSlamMsckfTracks", &TrackManager::getNewSlamMsckfTracks, "Get new SLAM-Msckf tracks")
+            .def("getOppTracks", &TrackManager::getOppTracks, "Get Opp tracks")
+            .def("normalizeSlamTracks", &TrackManager::normalizeSlamTracks, "size_out"_a,
+                 "Returns size_out normalized tracks")
+            .def("getLostSlamTrackIndexes", &TrackManager::getLostSlamTrackIndexes, "Get lost SLAM tracks")
+            .def("clear", &TrackManager::clear, "Clear all tracks")
+            .def("manageTracks",
+                 [](TrackManager &self, int timestamp, int n_tiles_h, int n_tiles_w, int max_feat_per_tile,
+                    MatchList &matches, const AttitudeList cam_rots,
+                    const size_t n_poses_max, const size_t n_slam_features_max,
+                    const size_t min_track_length, cv::Mat &img) {
+                     TiledImage current_img_tiled = TiledImage(img, timestamp,
+                                                               0, n_tiles_h, n_tiles_w,
+                                                               max_feat_per_tile);
+                     self.manageTracks(matches, cam_rots, n_poses_max, n_slam_features_max, min_track_length,
+                                       current_img_tiled);
+                 }, "timestamp"_a, "n_tiles_h"_a, "n_tiles_w"_a, "max_feat_per_tile"_a, "matches"_a, "cam_rots"_a,
+                 "n_poses_max"_a, "n_slam_features_max"_a, "min_track_length"_a, "img"_a,
+                 "Manages matches");
 }

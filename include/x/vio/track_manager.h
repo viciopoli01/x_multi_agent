@@ -38,6 +38,8 @@ namespace x {
                      const double min_baseline_y_n);
 
         void setCamera(std::shared_ptr<CameraModel> camera);
+        void setMsckfbaselines(const double min_baseline_x_n,
+                               const double min_baseline_y_n);
 
         // All track getters are in normalized image coordinates
         TrackList getMsckfTracks() const; // Tracks ready for MSCKF update

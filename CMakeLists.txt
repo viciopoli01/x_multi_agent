@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.18...3.16)
 
-set(VERSION 1.2.3)
+set(VERSION 1.3.0)
 project(x VERSION ${VERSION} LANGUAGES C CXX)
 
 if (NOT CMAKE_BUILD_TYPE)
