@@ -25,21 +25,6 @@ PYBIND11_MAKE_OPAQUE(x::TranslationList)
 PYBIND11_MAKE_OPAQUE(std::vector<Eigen::Vector3d>)
 
 namespace x_py {
-//    class PyCameraModel : public x::CameraModel {
-//    public:
-//        /* Inherit the constructors */
-//        using CameraModel::CameraModel;
-//
-//        /* Trampoline (need one for each virtual function) */
-//        void undistort(Feature &feature) override {
-//            PYBIND11_OVERRIDE_PURE(
-//                    void, /* Return type */
-//                    x::CameraModel,      /* Parent class */
-//                    undistort,          /* Name of function in C++ (must match Python name) */
-//                    feature      /* Argument(s) */
-//            );
-//        }
-//    };
     template<class CameraModelBase = x::CameraModel>
     class PyCameraModel : public CameraModelBase {
     public:
@@ -48,55 +33,6 @@ namespace x_py {
             PYBIND11_OVERRIDE_PURE(void, CameraModelBase, undistort, feature);
         }
     };
-
-
-//    class PyCameraFov : public x::CameraFov {
-//    public:
-//        /* Inherit the constructors */
-//        using CameraFov::CameraFov;
-//
-//        /* Trampoline (need one for each virtual function) */
-//        void undistort(Feature &feature) override {
-//            PYBIND11_OVERRIDE_PURE(
-//                    void, /* Return type */
-//                    x::CameraFov,      /* Parent class */
-//                    undistort,          /* Name of function in C++ (must match Python name) */
-//                    feature      /* Argument(s) */
-//            );
-//        }
-//    };
-//
-//    class PyCameraRadTan : public x::CameraRadTan {
-//    public:
-//        /* Inherit the constructors */
-//        using CameraRadTan::CameraRadTan;
-//
-//        /* Trampoline (need one for each virtual function) */
-//        void undistort(Feature &feature) override {
-//            PYBIND11_OVERRIDE_PURE(
-//                    void, /* Return type */
-//                    x::CameraModel,      /* Parent class */
-//                    undistort,          /* Name of function in C++ (must match Python name) */
-//                    feature      /* Argument(s) */
-//            );
-//        }
-//    };
-//
-//    class PyCameraEquidistant : public x::CameraEquidistant {
-//    public:
-//        /* Inherit the constructors */
-//        using CameraEquidistant::CameraEquidistant;
-//
-//        /* Trampoline (need one for each virtual function) */
-//        void undistort(Feature &feature) override {
-//            PYBIND11_OVERRIDE_PURE(
-//                    void, /* Return type */
-//                    x::CameraModel,      /* Parent class */
-//                    undistort,          /* Name of function in C++ (must match Python name) */
-//                    feature      /* Argument(s) */
-//            );
-//        }
-//    };
 }
 
 // namespace pybind11::detail
@@ -184,7 +120,6 @@ PYBIND11_MODULE(x_bind, m) {
             .def(py::init<>())
             .def("initAtTime", &VIO::initAtTime, "time"_a)
             .def("isInitialized", &VIO::isInitialized, "True if initialized")
-            .def("isInitialized", &VIO::isInitialized, "Return true if initialized")
             .def("processImu", &VIO::processImu, "timestamp"_a, "seq"_a, "w_m"_a, "a_m"_a)
             .def("computeSLAMCartesianFeaturesForState", &VIO::computeSLAMCartesianFeaturesForState, "state"_a)
             .def("processTracks", [](VIO &self, const double &timestamp,
@@ -209,6 +144,22 @@ PYBIND11_MODULE(x_bind, m) {
 
     py::class_<Camera::Params>(m, "CamParams")
             .def(py::init<>())
+            .def(py::init<const double,
+                         const double,
+                         const double,
+                         const double,
+                         std::vector<double>,
+                         const unsigned,
+                         const unsigned,
+                         const std::string &>(),
+                 "fx"_a,
+                 "fy"_a,
+                 "cx"_a,
+                 "cy"_a,
+                 "dist_coeff"_a,
+                 "img_width"_a,
+                 "img_height"_a,
+                 "distortion_model"_a)
             .def("inv_fx", [](Camera::Params &self) {
                 return self.inv_fx_;
             })

@@ -1,3 +1,5 @@
+#include <utility>
+
 //
 // Created by viciopoli on 05.01.23.
 //
@@ -31,14 +33,14 @@ namespace x::Camera {
 
         Params(){};
 
-        Params(double fx,
-               double fy,
-               double cx,
-               double cy,
-               std::vector<double> dist_coeff,
-               unsigned int img_width,
-               unsigned int img_height,
-               std::string distortion_model) :
+        Params(const double fx,
+               const double fy,
+               const double cx,
+               const double cy,
+               std::vector<double>  dist_coeff,
+               const unsigned int img_width,
+               const unsigned int img_height,
+               const std::string& distortion_model) :
                 img_width_(img_width),
                 img_height_(img_height),
                 fx_(fx * img_width), fy_(fy * img_height),
