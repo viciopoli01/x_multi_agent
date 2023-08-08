@@ -8,6 +8,27 @@ os.environ['LD_LIBRARY_PATH'] = os.environ['LD_LIBRARY_PATH'] + ":/opt/x/lib/cma
 import x_bind as x
 import rosbag
 import numpy as np
+import open3d as o3d
+
+
+class Visualizer:
+    def __init__(self):
+        self.frame = o3d.geometry.TriangleMesh.create_coordinate_frame()
+        self.vis = o3d.visualization.Visualizer()
+        self.vis.create_window()
+        self.vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame())
+        self.vis.add_geometry(self.frame)
+
+    def visualize(self, pos, ori):
+        self.frame.translate(pos, relative=False)
+        self.frame.rotate(self.frame.get_rotation_matrix_from_quaternion([ori[1], ori[2], ori[3], ori[0]]))
+        self.vis.update_geometry(self.frame)
+        self.vis.poll_events()
+        self.vis.update_renderer()
+
+    def __del__(self):
+        self.vis.destroy_window()
+
 
 vio = x.VIO()
 p = vio.loadParamsFromYaml(
@@ -23,6 +44,7 @@ tracker_vio.set_params(cam=cam_type, fast_detection_delta=p.fast_detection_delta
                        win_size_w=p.win_size_w(), win_size_h=p.win_size_h(), max_level=p.max_level(),
                        min_eig_thr=p.min_eig_thr())
 
+vis = Visualizer()
 bridge = CvBridge()
 bag = rosbag.Bag('/home/viciopoli/RPG/bags/circle_high_vel_restamped.bag')
 img_count = 0
@@ -37,7 +59,6 @@ for topic, msg, _ in bag.read_messages(topics=['/camera/image_raw', '/fcu/imu'])
         a_m = np.array([msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z])
         s = vio.processImu(timestamp=t, seq=msg.header.seq, w_m=w_m, a_m=a_m)
 
-
     if topic == "/camera/image_raw":
         cv_image_gray = bridge.imgmsg_to_cv2(msg, "rgb8")
         cv2.imshow("Frame", cv_image_gray)
@@ -49,6 +70,9 @@ for topic, msg, _ in bag.read_messages(topics=['/camera/image_raw', '/fcu/imu'])
         if matches is not None:
             img = cv2.cvtColor(cv_image_gray, cv2.COLOR_BGR2GRAY)
             s, out = vio.processTracks(timestamp=t, seq=msg.header.seq, matches=matches, image=img)
+            pos = s.computeCameraPosition()
+            ori = s.computeCameraOrientation()
+            vis.visualize(pos, ori)
             cv2.imshow("Frame with tracks", out)
             cv2.waitKey(1)
         img_count += 1
