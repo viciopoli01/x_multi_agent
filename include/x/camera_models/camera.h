@@ -4,6 +4,8 @@
 
 #ifndef X_CAMERA_H
 #define X_CAMERA_H
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 
 #include "x/camera_models/camera_model.h"
 #include "x/camera_models/camera_equidistant.h"
@@ -25,5 +27,5 @@ namespace x::Camera {
         }
     }
 }
-
+#pragma GCC diagnostic pop
 #endif //X_CAMERA_H

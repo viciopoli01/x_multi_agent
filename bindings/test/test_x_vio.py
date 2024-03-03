@@ -78,7 +78,7 @@ for topic, msg, _ in bag.read_messages(topics=['/camera/image_raw', '/fcu/imu'])
         img_count += 1
 
     if not s is None:
-        print(f"Postion after feeding: {s.getPosition()}")
+        print(f"Position after feeding: {s.getPosition()}")
 
 cv2.destroyAllWindows()
 bag.close()
